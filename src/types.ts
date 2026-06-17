@@ -17,6 +17,7 @@ export interface RunZsignOptions {
   outputPaths?: string[];
   collectDirectories?: string[];
   persistCache?: boolean;
+  onLog?: (line: string) => void;
 }
 
 export interface RunZsignResult {
@@ -56,4 +57,3 @@ export interface SignIpaOptions {
   metadata?: boolean;
   removeDylibs?: string[];
 }
-

@@ -56,19 +56,23 @@ function syncfs(FS: any, populate: boolean) {
   });
 }
 
-async function loadModule(logs: string[]) {
+async function loadModule(logs: string[], emitLog: (line: string) => void) {
   const moduleUrl = `/wasm/zsign.mjs?v=${wasmCacheBust}`;
   const imported = await importModule(moduleUrl);
+  const recordLog = (line: string) => {
+    logs.push(line);
+    emitLog(line);
+  };
   return imported.default({
     noInitialRun: true,
     locateFile(file: string) {
       return `/wasm/${file}?v=${wasmCacheBust}`;
     },
     print(line: string) {
-      logs.push(line);
+      recordLog(line);
     },
     printErr(line: string) {
-      logs.push(line);
+      recordLog(line);
     }
   });
 }
@@ -135,7 +139,8 @@ function collectDirectory(FS: any, dir: string, outputs: OutputFile[]) {
 
 async function execute(request: WorkerRequest): Promise<RunZsignResult> {
   const logs: string[] = [];
-  const module = await loadModule(logs);
+  const emitLog = (line: string) => ctx.postMessage({ id: request.id, type: "log", ok: true, line });
+  const module = await loadModule(logs, emitLog);
   const FS = module.FS;
 
   ensureDir(FS, "/work");
@@ -158,14 +163,18 @@ async function execute(request: WorkerRequest): Promise<RunZsignResult> {
   } catch (error) {
     trapped = true;
     const message = error instanceof Error ? error.message : String(error);
-    logs.push(`>>> WASM trap: ${message}`);
+    const line = `>>> WASM trap: ${message}`;
+    logs.push(line);
+    emitLog(line);
   } finally {
     if (request.options.persistCache !== false) {
       try {
         await syncfs(FS, false);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logs.push(`>>> Cache sync failed after run: ${message}`);
+        const line = `>>> Cache sync failed after run: ${message}`;
+        logs.push(line);
+        emitLog(line);
       }
     }
   }
@@ -201,10 +210,11 @@ ctx.addEventListener("message", async (event: MessageEvent<WorkerRequest>) => {
   try {
     const result = await execute(request);
     const transfers = result.outputs.map((output) => output.data);
-    ctx.postMessage({ id: request.id, ok: true, result }, transfers);
+    ctx.postMessage({ id: request.id, type: "done", ok: true, result }, transfers);
   } catch (error) {
     ctx.postMessage({
       id: request.id,
+      type: "done",
       ok: false,
       error: error instanceof Error ? error.message : String(error)
     });

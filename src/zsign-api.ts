@@ -3,6 +3,7 @@ import type { OutputFile, RunZsignOptions, RunZsignResult, SignIpaOptions, Virtu
 type PendingRun = {
   resolve: (value: RunZsignResult) => void;
   reject: (reason?: unknown) => void;
+  onLog?: (line: string) => void;
 };
 
 let worker: Worker | null = null;
@@ -16,12 +17,18 @@ function getWorker() {
   worker.addEventListener("message", (event: MessageEvent) => {
     const message = event.data as {
       id: number;
+      type?: "log" | "done";
       ok: boolean;
+      line?: string;
       result?: RunZsignResult;
       error?: string;
     };
     const run = pending.get(message.id);
     if (!run) return;
+    if (message.type === "log") {
+      if (message.line !== undefined) run.onLog?.(message.line);
+      return;
+    }
     pending.delete(message.id);
     if (message.ok && message.result) {
       run.resolve(message.result);
@@ -46,10 +53,11 @@ export function runZsign(
   options: RunZsignOptions = {}
 ): Promise<RunZsignResult> {
   const id = nextId++;
-  const request = { id, type: "run", args, files, options };
+  const { onLog, ...workerOptions } = options;
+  const request = { id, type: "run", args, files, options: workerOptions };
 
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
+    pending.set(id, { resolve, reject, onLog });
     getWorker().postMessage(request);
   });
 }
@@ -65,7 +73,7 @@ function pushIf(args: string[], condition: unknown, flag: string, value?: string
   if (value !== undefined) args.push(value);
 }
 
-export function signIpa(options: SignIpaOptions): Promise<RunZsignResult> {
+export function signIpa(options: SignIpaOptions, runOptions: Pick<RunZsignOptions, "onLog"> = {}): Promise<RunZsignResult> {
   const outputName = safeName(options.outputName || `signed-${options.ipa.name}`, "signed.ipa");
   const outputPath = `/output/${outputName.endsWith(".ipa") ? outputName : `${outputName}.ipa`}`;
   const metadataPath = "/output/metadata";
@@ -141,7 +149,8 @@ export function signIpa(options: SignIpaOptions): Promise<RunZsignResult> {
   return runZsign(args, files, {
     outputPaths: [outputPath],
     collectDirectories: options.metadata ? [metadataPath] : [],
-    persistCache: true
+    persistCache: true,
+    ...runOptions
   });
 }
 
@@ -166,4 +175,3 @@ export function splitCliArgs(input: string) {
   }
   return args;
 }
-

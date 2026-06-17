@@ -9,9 +9,13 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
     "noEmit": true,
     "strict": true
   },
   "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]
 }
-
