@@ -432,7 +432,7 @@ function WelcomeLottie() {
       canvas,
       src: '/hello-apple.lottie',
       autoplay: true,
-      loop: false,
+      loop: true,
       renderConfig: {
         autoResize: true,
       },
@@ -441,7 +441,13 @@ function WelcomeLottie() {
     return () => player.destroy()
   }, [])
 
-  return <canvas ref={canvasRef} className="size-full" aria-label="Welcome animation" />
+  return (
+    <canvas
+      ref={canvasRef}
+      className="size-full brightness-0 invert"
+      aria-label="Welcome animation"
+    />
+  )
 }
 
 function WelcomeDialog({ onClose }: { onClose: () => void }) {
@@ -453,8 +459,8 @@ function WelcomeDialog({ onClose }: { onClose: () => void }) {
       aria-labelledby="welcome-title"
     >
       <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-        <div className="px-6 pt-6">
-          <div className="mx-auto size-36 overflow-hidden rounded-3xl bg-muted/30">
+        <div className="px-6 pt-3">
+          <div className="mx-auto size-52 md:size-60">
             <WelcomeLottie />
           </div>
         </div>
