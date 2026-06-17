@@ -55,6 +55,7 @@ export function InstallQrDialog({
   const [result, setResult] = React.useState<TemporaryInstallResult | null>(null)
   const [qrDataUrl, setQrDataUrl] = React.useState('')
   const [copied, setCopied] = React.useState(false)
+  const [uploadProgress, setUploadProgress] = React.useState(0)
 
   const canUpload =
     state !== 'uploading' && appName.trim() && bundleId.trim() && version.trim()
@@ -71,10 +72,13 @@ export function InstallQrDialog({
     setState('uploading')
     setError('')
     setCopied(false)
+    setResult(null)
+    setQrDataUrl('')
+    setUploadProgress(3)
 
     try {
       onLog?.(`Uploading signed IPA to Litterbox for ${expiry}`)
-      const ipaUrl = await uploadSignedIpaToLitterbox(output, expiry)
+      const ipaUrl = await uploadSignedIpaToLitterbox(output, expiry, setUploadProgress)
       const nextResult = buildPaleraInstallUrls(
         {
           appName: appName.trim(),
@@ -95,6 +99,7 @@ export function InstallQrDialog({
 
       setResult(nextResult)
       setQrDataUrl(nextQr)
+      setUploadProgress(100)
       setState('ready')
       onLog?.('Install QR generated from temporary HTTPS IPA URL')
     } catch (nextError) {
@@ -102,6 +107,7 @@ export function InstallQrDialog({
         nextError instanceof Error ? nextError.message : String(nextError)
       setError(message)
       setState('error')
+      setUploadProgress(0)
       onLog?.(`Install QR failed: ${message}`)
     }
   }
@@ -143,8 +149,8 @@ export function InstallQrDialog({
           </Button>
         </div>
 
-        <div className="grid min-h-0 gap-5 overflow-y-auto p-5 md:grid-cols-[1fr_240px]">
-          <div className="space-y-4">
+        <div className="grid min-h-0 gap-5 overflow-y-auto p-5 md:grid-cols-[minmax(0,1fr)_240px]">
+          <div className="min-w-0 space-y-4">
             <button
               type="button"
               onClick={() => setShowLimitations((value) => !value)}
@@ -157,6 +163,11 @@ export function InstallQrDialog({
                 {showLimitations ? 'Hide limitations' : 'View limitations'}
               </span>
             </button>
+
+            <p className="text-xs leading-5 text-muted-foreground">
+              Large signed IPAs may take a while to upload. Keep this tab open until the
+              QR code appears.
+            </p>
 
             {showLimitations && (
               <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm leading-6 text-muted-foreground">
@@ -240,6 +251,21 @@ export function InstallQrDialog({
               </AnimateIcon>
             </div>
 
+            {state === 'uploading' && (
+              <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
+                <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                  <span>Uploading signed IPA</span>
+                  <span className="tabular-nums">{uploadProgress}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-background">
+                  <div
+                    className="h-full rounded-full bg-yellow-500 transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             {error && (
               <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 {error}
@@ -247,14 +273,19 @@ export function InstallQrDialog({
             )}
 
             {result && (
-              <div className="space-y-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-                <p className="truncate">
-                  IPA URL: <span className="text-foreground">{result.ipaUrl}</span>
-                </p>
-                <p className="truncate">
-                  Manifest:{' '}
-                  <span className="text-foreground">{result.manifestUrl}</span>
-                </p>
+              <div className="min-w-0 space-y-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground/80">IPA URL</p>
+                  <div className="mt-1 max-w-full overflow-x-auto rounded-lg bg-background px-2 py-1 font-mono">
+                    <span className="whitespace-nowrap">{result.ipaUrl}</span>
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground/80">Manifest</p>
+                  <div className="mt-1 max-w-full overflow-x-auto rounded-lg bg-background px-2 py-1 font-mono">
+                    <span className="whitespace-nowrap">{result.manifestUrl}</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>

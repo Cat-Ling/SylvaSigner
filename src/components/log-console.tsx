@@ -31,10 +31,12 @@ const levelLabel: Record<LogLevel, string> = {
 }
 
 export function LogConsole({ logs, active = false }: { logs: LogEntry[]; active?: boolean }) {
-  const endRef = React.useRef<HTMLDivElement>(null)
+  const logsRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const logsElement = logsRef.current
+    if (!logsElement) return
+    logsElement.scrollTop = logsElement.scrollHeight
   }, [logs])
 
   return (
@@ -55,7 +57,11 @@ export function LogConsole({ logs, active = false }: { logs: LogEntry[]; active?
         </div>
       </AnimateIcon>
 
-      <div id="logs" className="min-h-0 flex-1 overflow-y-auto px-4 py-3 font-mono text-xs leading-relaxed">
+      <div
+        id="logs"
+        ref={logsRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 font-mono text-xs leading-relaxed"
+      >
         {logs.length === 0 ? (
           <p className="text-muted-foreground/60">
             {'>'} Waiting for input. Drop your files and press Sign.
@@ -80,7 +86,6 @@ export function LogConsole({ logs, active = false }: { logs: LogEntry[]; active?
                 </span>
               </div>
             ))}
-            <div ref={endRef} />
           </div>
         )}
       </div>

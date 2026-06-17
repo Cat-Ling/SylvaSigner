@@ -38,6 +38,11 @@ import type { OutputFile, SignIpaOptions } from '@/types'
 type SignState = 'idle' | 'signing' | 'done' | 'error'
 type Route = 'app' | 'privacy' | 'legal'
 
+type ProgressState = {
+  value: number
+  label: string
+}
+
 type CachedFileData = {
   name: string
   type: string
@@ -179,6 +184,37 @@ function parseInstallMetadataLine(line: string) {
   if (key.toLowerCase() === 'bundleid') return { bundleId: value.trim() }
   if (key.toLowerCase() === 'version') return { version: value.trim() }
   return null
+}
+
+function signingProgressForLine(line: string, current: ProgressState): ProgressState {
+  const clean = cleanLogLine(line).toLowerCase()
+  if (clean.includes('unzip:')) return { value: Math.max(current.value, 12), label: 'Unzipping IPA locally' }
+  if (clean.includes('unzip ok')) return { value: Math.max(current.value, 25), label: 'IPA extracted' }
+  if (clean.includes('signing:')) return { value: Math.max(current.value, 34), label: 'Preparing app signature' }
+  if (clean.includes('signfile:')) return { value: Math.min(82, Math.max(current.value + 2, 42)), label: 'Signing app binaries' }
+  if (clean.includes('signfolder:')) return { value: Math.min(88, Math.max(current.value + 3, 66)), label: 'Writing bundle signatures' }
+  if (clean.includes('signed ok')) return { value: Math.max(current.value, 88), label: 'Signature complete' }
+  if (clean.includes('archiving:')) return { value: Math.max(current.value, 94), label: 'Archiving signed IPA' }
+  if (clean.includes('archive ok')) return { value: Math.max(current.value, 98), label: 'Archive complete' }
+  if (clean.includes('done')) return { value: 100, label: 'Done' }
+  return current
+}
+
+function ProgressBar({ progress }: { progress: ProgressState }) {
+  return (
+    <div className="rounded-xl border border-border bg-card px-4 py-3">
+      <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>{progress.label}</span>
+        <span className="tabular-nums">{progress.value}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+          style={{ width: `${progress.value}%` }}
+        />
+      </div>
+    </div>
+  )
 }
 
 function LegalFooter() {
@@ -339,6 +375,10 @@ function SignerApp() {
   const [outputs, setOutputs] = React.useState<OutputFile[]>([])
   const [installMetadata, setInstallMetadata] = React.useState<Partial<InstallMetadata>>({})
   const [installDialogOpen, setInstallDialogOpen] = React.useState(false)
+  const [signProgress, setSignProgress] = React.useState<ProgressState>({
+    value: 0,
+    label: 'Waiting to sign',
+  })
 
   const canSign = Boolean(ipa[0] && (p12[0] || cachedCertInfo?.p12) && (profiles.length || cachedCertInfo?.profiles.length)) && state !== 'signing'
   const hasCache = Boolean(cachedCertInfo?.p12 || cachedCertInfo?.profiles.length || cachedCertInfo?.password)
@@ -384,6 +424,7 @@ function SignerApp() {
       if (parsedMetadata) {
         setInstallMetadata((current) => ({ ...current, ...parsedMetadata }))
       }
+      setSignProgress((current) => signingProgressForLine(line, current))
       addLog(logLevelFor(line), cleanLogLine(line))
     },
     [addLog],
@@ -439,11 +480,13 @@ function SignerApp() {
   }, [bundleId, cacheCert, cachedCertInfo, certPassword, dylibs, ipa, outputName, p12, profiles])
 
   const handleSign = async () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     setState('signing')
     setLogs([])
     setOutputs([])
     setInstallMetadata({})
     setInstallDialogOpen(false)
+    setSignProgress({ value: 5, label: 'Starting local signing session' })
 
     try {
       if (cacheCert) await saveCertCacheFromInputs()
@@ -454,9 +497,17 @@ function SignerApp() {
 
       setOutputs(result.outputs)
       addLog(result.exitCode === 0 ? 'success' : 'error', `zsign exited with code ${result.exitCode}`)
+      setSignProgress((current) => ({
+        value: result.exitCode === 0 ? 100 : Math.max(current.value, 1),
+        label: result.exitCode === 0 ? 'Signing complete' : 'Signing stopped',
+      }))
       setState(result.exitCode === 0 ? 'done' : 'error')
     } catch (error) {
       addLog('error', error instanceof Error ? error.message : String(error))
+      setSignProgress((current) => ({
+        value: Math.max(current.value, 1),
+        label: 'Signing failed',
+      }))
       setState('error')
     }
   }
@@ -479,6 +530,7 @@ function SignerApp() {
     setLogs([])
     setInstallMetadata({})
     setInstallDialogOpen(false)
+    setSignProgress({ value: 0, label: 'Waiting to sign' })
     if (!cacheCert) setCertPassword('')
     setState('idle')
   }
@@ -708,6 +760,16 @@ function SignerApp() {
               </Button>
             </AnimateIcon>
           </div>
+
+          {(state === 'signing' || state === 'done' || state === 'error') && (
+            <ProgressBar progress={signProgress} />
+          )}
+
+          <p className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-xs leading-5 text-muted-foreground">
+            Large IPAs can be slow because unzipping, signing, and re-archiving happen
+            locally in browser memory. Keep this tab open; peak memory can be several
+            times the IPA size. QR install uploads the signed IPA only after you confirm.
+          </p>
         </div>
 
         <div className="flex min-h-[420px] flex-col lg:min-h-0">
