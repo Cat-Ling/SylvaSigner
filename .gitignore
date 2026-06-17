@@ -1,14 +1,38 @@
+# Dependencies and generated app output
 node_modules/
 dist/
-deps/
-tools/emsdk/
-.build/
 .vite/
-.tmp/
 coverage/
 playwright-report/
 test-results/
-public/wasm/*
-!public/wasm/.gitkeep
 *.log
 
+# Heavy native/WASM build workspaces. These are reproducible from scripts.
+deps/
+tools/emsdk/
+.build/
+
+# Scratch clones and local investigation files.
+.tmp/
+
+# Local environment/configuration
+.env
+.env.*
+!.env.example
+
+# Real signing material and user apps must never be committed.
+*.p12
+*.pfx
+*.cer
+*.der
+*.key
+*.pem
+*.mobileprovision
+*.provisionprofile
+*.ipa
+*.xcarchive/
+!tests/fixtures/Example.ipa
+
+# Signed/downloaded local outputs
+*_signed.ipa
+*.signed.ipa
