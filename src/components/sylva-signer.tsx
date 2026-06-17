@@ -460,12 +460,12 @@ function WelcomeDialog({ onClose }: { onClose: () => void }) {
     >
       <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
         <div className="px-6 pt-3">
-          <div className="mx-auto size-52 md:size-60">
+          <div className="mx-auto size-64 md:size-72">
             <WelcomeLottie />
           </div>
         </div>
 
-        <div className="space-y-4 px-6 pb-6 pt-4 text-center">
+        <div className="-mt-12 space-y-4 px-6 pb-6 text-center md:-mt-16">
           <div>
             <h2 id="welcome-title" className="text-2xl font-semibold tracking-tight">
               Hey there 👋
