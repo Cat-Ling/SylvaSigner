@@ -511,26 +511,33 @@ function LegalFooter() {
           during signing; QR install uploads only the signed IPA after confirmation.
         </p>
 
-        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-y border-border/70 py-3">
-          <a
-            className="inline-flex items-center gap-1.5 font-medium text-foreground/80 transition-colors hover:text-emerald-500"
-            href="https://github.com/zhlynn/zsign"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <GithubIcon size={14} />
-            Powered by zsign
-          </a>
-          <span className="text-foreground/60">Private WASM port</span>
-          <span className="hidden h-3 w-px bg-border sm:block" aria-hidden="true" />
-          <a
-            className="font-medium text-foreground/80 transition-colors hover:text-amber-500"
-            href="https://litterbox.catbox.moe/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Temporary hosting by Litterbox
-          </a>
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 border-y border-border/70 py-3 text-foreground/70">
+          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+            Powered by
+            <a
+              className="font-medium text-sky-300 transition-colors hover:text-sky-200 hover:underline"
+              href="https://github.com/zhlynn/zsign"
+              target="_blank"
+              rel="noreferrer"
+            >
+              zsign
+            </a>
+            <span>(Private WASM port)</span>
+          </span>
+          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+            <span className="mr-2 font-semibold text-foreground/60" aria-hidden="true">
+              |
+            </span>
+            Temporary hosting by
+            <a
+              className="font-medium text-sky-300 transition-colors hover:text-sky-200 hover:underline"
+              href="https://litterbox.catbox.moe/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Litterbox
+            </a>
+          </span>
         </div>
 
         <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
