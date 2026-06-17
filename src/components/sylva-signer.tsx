@@ -325,15 +325,30 @@ function SignerApp() {
   const canSign = Boolean(ipa[0] && (p12[0] || cachedCertInfo?.p12) && (profiles.length || cachedCertInfo?.profiles.length)) && state !== 'signing'
   const hasCache = Boolean(cachedCertInfo?.p12 || cachedCertInfo?.profiles.length || cachedCertInfo?.password)
 
+  const hydrateCachedFiles = React.useCallback((cached: CachedCertInfo | null) => {
+    if (!cached) return
+    setP12((current) => (current.length === 0 && cached.p12 ? [cachedDataToFile(cached.p12)] : current))
+    setProfiles((current) =>
+      current.length === 0 && cached.profiles.length > 0
+        ? cached.profiles.map(cachedDataToFile)
+        : current,
+    )
+    if (cached.password) setCertPassword((current) => current || cached.password || '')
+  }, [])
+
   React.useEffect(() => {
     void readCachedCertInfo()
       .then((cached) => {
         setCachedCertInfo(cached)
-        if (cached?.password) setCertPassword(cached.password)
+        hydrateCachedFiles(cached)
         if (cached?.p12 || cached?.profiles.length || cached?.password) setCacheCert(true)
       })
       .catch(() => setCachedCertInfo(null))
-  }, [])
+  }, [hydrateCachedFiles])
+
+  React.useEffect(() => {
+    if (cacheCert) hydrateCachedFiles(cachedCertInfo)
+  }, [cacheCert, cachedCertInfo, hydrateCachedFiles])
 
   React.useEffect(() => {
     if (!outputNameTouched) setOutputName(defaultOutputName(ipa[0]))
@@ -368,6 +383,9 @@ function SignerApp() {
     await deleteCachedCertInfo()
     setCachedCertInfo(null)
     setCacheCert(false)
+    setP12([])
+    setProfiles([])
+    setCertPassword('')
     addLog('success', 'Cached certificate information cleared')
   }, [addLog])
 
@@ -665,7 +683,7 @@ function SignerApp() {
         </div>
 
         <div className="flex min-h-[420px] flex-col lg:min-h-0">
-          <div className="flex-1">
+          <div className="h-[420px] max-h-[520px] lg:h-[calc(100vh-12rem)] lg:max-h-[680px]">
             <LogConsole logs={logs} active={state === 'signing'} />
           </div>
 
