@@ -20,6 +20,11 @@ Made by [AntonP29](https://github.com/AntonP29).
 - Optional certificate/profile/password cache stored in browser IndexedDB.
 - Optional post-sign QR install flow using temporary Litterbox hosting plus Palera's
   manifest generator.
+- Browser-local `Previous IPAs` history records signed output names and, when used,
+  temporary download/install links with active or expired status. Signed IPA bytes are
+  not retained in history.
+- A bundled welcome animation explains local processing and temporary HTTPS install
+  hosting before the user enters the signing workspace.
 - Privacy Policy and Legal pages are included in the app footer.
 - Generated WASM runtime files are committed under `public/wasm/` so a fresh clone can
   run without rebuilding Emscripten/OpenSSL first.
@@ -36,6 +41,10 @@ The QR install flow is opt-in and not fully local. It uploads only the already-s
 IPA to Litterbox temporarily so iOS can fetch the file over HTTPS. The certificate,
 provisioning profile, password, and original local inputs are not uploaded by Sylva
 Signer for that flow.
+
+Previous IPA history is stored in browser `localStorage`. Entries that were never
+uploaded are labeled `Fully Local`; uploaded entries retain only their temporary URLs,
+selected expiration duration, and calculated active/expired state.
 
 Important trust note: if you use a hosted copy, your browser still downloads the app
 code from that host. Use a domain and build you trust.
@@ -145,6 +154,8 @@ npm run test:e2e
 src/                 React/Vite app, UI, zsign API wrapper, worker
 src/components/      Animated icon pack and UI support code
 public/wasm/         Committed zsign WASM runtime used by the browser app
+public/*.lottie      Bundled welcome animation
+public/dotlottie-player.wasm  Bundled local Lottie runtime
 scripts/             Emscripten/OpenSSL/zsign build and smoke-test scripts
 vendor/zsign/        Vendored upstream zsign source
 docs/                Upstream and WASM build notes

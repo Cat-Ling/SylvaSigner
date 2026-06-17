@@ -10,9 +10,13 @@ test("loads the exact Sylva signing work surface without external network reques
   });
 
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Hey there 👋" })).toBeVisible();
+  await expect(page.getByText("June 17th, 2026")).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: "Sylva Signer" })).toBeVisible();
   await expect(page.getByText("Fully local IPA signing in your browser")).toBeVisible();
   await expect(page.getByText("Private by design")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Previous IPAs" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign IPA" })).toBeDisabled();
   await expect(page.locator("#ipa")).toBeAttached();
   await expect(page.locator("#p12")).toBeAttached();
@@ -28,6 +32,7 @@ test("loads the exact Sylva signing work surface without external network reques
 
 test("derives output name from selected IPA and keeps live logs visible", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "Continue" }).click();
   await page.setInputFiles("#ipa", "tests/fixtures/Example.ipa");
   await expect(page.locator("#output-name")).toHaveValue("Example_signed.ipa");
   await expect(page.getByText("Waiting for input. Drop your files and press Sign.")).toBeVisible();
@@ -35,6 +40,7 @@ test("derives output name from selected IPA and keeps live logs visible", async 
 
 test("opens privacy and legal pages from the footer", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("link", { name: "Privacy Policy" }).click();
   await expect(page.getByRole("heading", { name: "Privacy Policy" })).toBeVisible();
   await expect(page.getByText("does not intentionally upload")).toBeVisible();
@@ -43,4 +49,12 @@ test("opens privacy and legal pages from the footer", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Legal" })).toBeVisible();
   await expect(page.getByText("made by AntonP29")).toBeVisible();
   await expect(page.getByRole("link", { name: "Visit AntonP29 on GitHub" })).toBeVisible();
+});
+
+test("opens previous IPA history from the header", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Previous IPAs" }).click();
+  await expect(page.getByRole("heading", { name: "Previous IPAs" })).toBeVisible();
+  await expect(page.getByText("No signed IPA history yet.")).toBeVisible();
 });

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { DotLottie } from '@lottiefiles/dotlottie-web'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,9 +30,18 @@ import { Download } from '@/components/animate-ui/icons/download'
 import { LoaderCircle } from '@/components/animate-ui/icons/loader-circle'
 import { CircleCheckBig } from '@/components/animate-ui/icons/circle-check-big'
 import { Send } from '@/components/animate-ui/icons/send'
+import { Copy } from '@/components/animate-ui/icons/copy'
 import { Lock } from '@/components/animate-ui/icons/lock'
 import { ClipboardList } from '@/components/animate-ui/icons/clipboard-list'
 import type { InstallMetadata } from '@/install-api'
+import {
+  clearIpaHistory,
+  createLocalHistoryEntry,
+  readIpaHistory,
+  updateHistoryEntryUpload,
+  upsertIpaHistoryEntry,
+  type IpaHistoryEntry,
+} from '@/history-api'
 import { saveOutput, signIpa } from '@/zsign-api'
 import type { OutputFile, SignIpaOptions } from '@/types'
 
@@ -217,6 +227,274 @@ function ProgressBar({ progress }: { progress: ProgressState }) {
   )
 }
 
+function formatHistoryDate(value: string) {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(value))
+  } catch {
+    return value
+  }
+}
+
+function isExpired(entry: IpaHistoryEntry) {
+  return Boolean(entry.expiresAt && Date.now() > new Date(entry.expiresAt).getTime())
+}
+
+function StatusTag({ children, tone }: { children: React.ReactNode; tone: 'local' | 'active' | 'expired' }) {
+  const toneClass =
+    tone === 'local'
+      ? 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-300'
+      : tone === 'active'
+        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+        : 'border-muted-foreground/20 bg-muted text-muted-foreground'
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClass}`}>
+      {children}
+    </span>
+  )
+}
+
+function PreviousIpasDialog({
+  entries,
+  onClose,
+  onClear,
+}: {
+  entries: IpaHistoryEntry[]
+  onClose: () => void
+  onClear: () => void
+}) {
+  const [copiedId, setCopiedId] = React.useState('')
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  const copyValue = async (id: string, value: string) => {
+    await navigator.clipboard.writeText(value)
+    setCopiedId(id)
+    window.setTimeout(() => setCopiedId(''), 1400)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="previous-ipas-title"
+    >
+      <div className="flex max-h-[min(92svh,760px)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div className="flex items-center gap-3">
+            <AnimateIcon animateOnHover>
+              <ClipboardList size={24} className="text-muted-foreground transition-colors hover:text-blue-500" />
+            </AnimateIcon>
+            <div>
+              <h2 id="previous-ipas-title" className="text-lg font-semibold">
+                Previous IPAs
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Local history of signed names and temporary install links.
+              </p>
+            </div>
+          </div>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+
+        <div className="min-h-0 overflow-y-auto p-5">
+          {entries.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+              No signed IPA history yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {entries.map((entry) => {
+                const expired = isExpired(entry)
+                const hasLinks = Boolean(entry.ipaUrl && entry.installUrl)
+
+                return (
+                  <div
+                    key={entry.id}
+                    className="rounded-xl border border-border bg-background px-4 py-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{entry.name}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Signed {formatHistoryDate(entry.signedAt)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!hasLinks ? (
+                          <StatusTag tone="local">Fully Local</StatusTag>
+                        ) : (
+                          <>
+                            <StatusTag tone={expired ? 'expired' : 'active'}>
+                              {expired ? 'Expired' : 'Active'}
+                            </StatusTag>
+                            <StatusTag tone="local">
+                              Litterbox {entry.uploadExpiry}
+                            </StatusTag>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {entry.metadata?.bundleId && (
+                      <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
+                        {entry.metadata.bundleId}
+                      </p>
+                    )}
+
+                    {hasLinks && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <AnimateIcon animateOnHover asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              copyValue(`${entry.id}-ipa`, entry.ipaUrl ?? '')
+                            }
+                            className="gap-2"
+                          >
+                            <Copy size={14} />
+                            {copiedId === `${entry.id}-ipa`
+                              ? 'Copied URL'
+                              : 'Copy Download URL'}
+                          </Button>
+                        </AnimateIcon>
+                        <AnimateIcon animateOnHover asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              copyValue(`${entry.id}-install`, entry.installUrl ?? '')
+                            }
+                            className="gap-2"
+                          >
+                            <Copy size={14} />
+                            {copiedId === `${entry.id}-install`
+                              ? 'Copied Link'
+                              : 'Copy iPhone Install Link'}
+                          </Button>
+                        </AnimateIcon>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {entries.length > 0 && (
+          <div className="flex justify-end border-t border-border px-5 py-3">
+            <AnimateIcon animateOnHover asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onClear}
+                className="gap-2 text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 size={16} />
+                Clear History
+              </Button>
+            </AnimateIcon>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function WelcomeLottie() {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null)
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    DotLottie.setWasmUrl('/dotlottie-player.wasm')
+    const player = new DotLottie({
+      canvas,
+      src: '/hello-apple.lottie',
+      autoplay: true,
+      loop: false,
+      renderConfig: {
+        autoResize: true,
+      },
+    })
+
+    return () => player.destroy()
+  }, [])
+
+  return <canvas ref={canvasRef} className="size-full" aria-label="Welcome animation" />
+}
+
+function WelcomeDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="welcome-title"
+    >
+      <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+        <div className="px-6 pt-6">
+          <div className="mx-auto size-36 overflow-hidden rounded-3xl bg-muted/30">
+            <WelcomeLottie />
+          </div>
+        </div>
+
+        <div className="space-y-4 px-6 pb-6 pt-4 text-center">
+          <div>
+            <h2 id="welcome-title" className="text-2xl font-semibold tracking-tight">
+              Hey there 👋
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              Sylva Signer is a browser-based proof of concept for local IPA signing.
+              Large files can take time because extraction, signing, and archiving happen
+              on this device in browser memory. Direct iPhone installation requires an
+              HTTPS-hosted IPA, so the built-in QR flow uploads only the signed IPA to a
+              temporary provider after your explicit agreement.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-muted-foreground">
+            <a
+              href="https://github.com/AntonP29"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+            >
+              <GithubIcon size={14} />
+              AntonP29
+            </a>
+            <span>June 17th, 2026</span>
+          </div>
+
+          <Button type="button" onClick={onClose} className="w-full">
+            Continue
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LegalFooter() {
   return (
     <footer className="mt-10 flex flex-col items-center justify-center gap-3 text-center text-xs text-muted-foreground">
@@ -379,10 +657,19 @@ function SignerApp() {
     value: 0,
     label: 'Waiting to sign',
   })
+  const [historyEntries, setHistoryEntries] = React.useState<IpaHistoryEntry[]>([])
+  const [historyDialogOpen, setHistoryDialogOpen] = React.useState(false)
+  const [welcomeOpen, setWelcomeOpen] = React.useState(true)
+  const [currentHistoryId, setCurrentHistoryId] = React.useState('')
+  const installMetadataRef = React.useRef<Partial<InstallMetadata>>({})
 
   const canSign = Boolean(ipa[0] && (p12[0] || cachedCertInfo?.p12) && (profiles.length || cachedCertInfo?.profiles.length)) && state !== 'signing'
   const hasCache = Boolean(cachedCertInfo?.p12 || cachedCertInfo?.profiles.length || cachedCertInfo?.password)
   const firstOutput = outputs.find((output) => output.name.toLowerCase().endsWith('.ipa')) ?? outputs[0]
+
+  React.useEffect(() => {
+    setHistoryEntries(readIpaHistory())
+  }, [])
 
   const hydrateCachedFiles = React.useCallback((cached: CachedCertInfo | null) => {
     if (!cached) return
@@ -422,7 +709,8 @@ function SignerApp() {
     (line: string) => {
       const parsedMetadata = parseInstallMetadataLine(line)
       if (parsedMetadata) {
-        setInstallMetadata((current) => ({ ...current, ...parsedMetadata }))
+        installMetadataRef.current = { ...installMetadataRef.current, ...parsedMetadata }
+        setInstallMetadata(installMetadataRef.current)
       }
       setSignProgress((current) => signingProgressForLine(line, current))
       addLog(logLevelFor(line), cleanLogLine(line))
@@ -485,7 +773,9 @@ function SignerApp() {
     setLogs([])
     setOutputs([])
     setInstallMetadata({})
+    installMetadataRef.current = {}
     setInstallDialogOpen(false)
+    setCurrentHistoryId('')
     setSignProgress({ value: 5, label: 'Starting local signing session' })
 
     try {
@@ -496,6 +786,16 @@ function SignerApp() {
       const result = await signIpa(buildSignOptions(), { onLog: addWorkerLog })
 
       setOutputs(result.outputs)
+      if (result.exitCode === 0) {
+        const signedOutput =
+          result.outputs.find((output) => output.name.toLowerCase().endsWith('.ipa')) ??
+          result.outputs[0]
+        if (signedOutput) {
+          const entry = createLocalHistoryEntry(signedOutput.name, installMetadataRef.current)
+          setCurrentHistoryId(entry.id)
+          setHistoryEntries(upsertIpaHistoryEntry(entry))
+        }
+      }
       addLog(result.exitCode === 0 ? 'success' : 'error', `zsign exited with code ${result.exitCode}`)
       setSignProgress((current) => ({
         value: result.exitCode === 0 ? 100 : Math.max(current.value, 1),
@@ -529,7 +829,9 @@ function SignerApp() {
     setOutputs([])
     setLogs([])
     setInstallMetadata({})
+    installMetadataRef.current = {}
     setInstallDialogOpen(false)
+    setCurrentHistoryId('')
     setSignProgress({ value: 0, label: 'Waiting to sign' })
     if (!cacheCert) setCertPassword('')
     setState('idle')
@@ -561,13 +863,31 @@ function SignerApp() {
             </p>
           </div>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <AnimateIcon animateOnHover asChild>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setHistoryEntries(readIpaHistory())
+                setHistoryDialogOpen(true)
+              }}
+              aria-label="Previous IPAs"
+              title="Previous IPAs"
+              className="size-9 gap-2 px-0 sm:w-auto sm:px-2.5"
+            >
+              <ClipboardList size={16} />
+              <span className="hidden sm:inline">Previous IPAs</span>
+            </Button>
+          </AnimateIcon>
+          <ThemeToggle />
+        </div>
       </header>
 
       <Separator className="my-8" />
 
-      <div className="grid flex-1 gap-6 lg:grid-cols-[1.15fr_1fr]">
-        <div className="flex flex-col gap-6">
+      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-6">
           <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5">
             <div className="flex items-center gap-2">
               <AnimateIcon animateOnHover>
@@ -772,7 +1092,7 @@ function SignerApp() {
           </p>
         </div>
 
-        <div className="flex min-h-[420px] flex-col lg:min-h-0">
+        <div className="flex min-h-[420px] min-w-0 flex-col lg:min-h-0">
           <div className="h-[420px] max-h-[520px] lg:h-[calc(100vh-12rem)] lg:max-h-[680px]">
             <LogConsole logs={logs} active={state === 'signing'} />
           </div>
@@ -825,8 +1145,25 @@ function SignerApp() {
           initialMetadata={installMetadata}
           onClose={() => setInstallDialogOpen(false)}
           onLog={(message) => addLog(logLevelFor(message), message)}
+          onUploaded={(result, expiry) => {
+            if (!currentHistoryId) return
+            setHistoryEntries(updateHistoryEntryUpload(currentHistoryId, result, expiry))
+          }}
         />
       )}
+
+      {historyDialogOpen && (
+        <PreviousIpasDialog
+          entries={historyEntries}
+          onClose={() => setHistoryDialogOpen(false)}
+          onClear={() => {
+            clearIpaHistory()
+            setHistoryEntries([])
+          }}
+        />
+      )}
+
+      {welcomeOpen && <WelcomeDialog onClose={() => setWelcomeOpen(false)} />}
 
       <LegalFooter />
     </main>

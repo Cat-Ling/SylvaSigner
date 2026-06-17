@@ -25,6 +25,7 @@ type InstallQrDialogProps = {
   initialMetadata: Partial<InstallMetadata>
   onClose: () => void
   onLog?: (message: string) => void
+  onUploaded?: (result: TemporaryInstallResult, expiry: LitterboxExpiry) => void
 }
 
 type UploadState = 'idle' | 'uploading' | 'ready' | 'error'
@@ -38,6 +39,7 @@ export function InstallQrDialog({
   initialMetadata,
   onClose,
   onLog,
+  onUploaded,
 }: InstallQrDialogProps) {
   const [appName, setAppName] = React.useState(() =>
     metadataValue(initialMetadata.appName, output.name.replace(/\.ipa$/i, '')),
@@ -101,6 +103,7 @@ export function InstallQrDialog({
       setQrDataUrl(nextQr)
       setUploadProgress(100)
       setState('ready')
+      onUploaded?.(nextResult, expiry)
       onLog?.('Install QR generated from temporary HTTPS IPA URL')
     } catch (nextError) {
       const message =
