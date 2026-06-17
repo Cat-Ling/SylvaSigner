@@ -3,15 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/icon-dark-32x32.png" />
-    <link
-      rel="icon"
-      type="image/png"
-      sizes="32x32"
-      href="/icon-light-32x32.png"
-      media="(prefers-color-scheme: light)"
-    />
-    <link rel="apple-touch-icon" href="/apple-icon.png" />
+    <link id="app-favicon" rel="icon" type="image/png" href="/icon-dark.png" />
+    <link rel="apple-touch-icon" href="/icon-dark.png" />
     <title>Sylva Signer</title>
     <script>
       (function () {
@@ -19,7 +12,10 @@
           var theme = localStorage.getItem("sylva-theme");
           var root = document.documentElement;
           root.classList.remove("light", "dark");
-          root.classList.add(theme === "light" ? "light" : "dark");
+          var selectedTheme = theme === "light" ? "light" : "dark";
+          root.classList.add(selectedTheme);
+          document.getElementById("app-favicon").href =
+            selectedTheme === "light" ? "/icon-light.png" : "/icon-dark.png";
         } catch (error) {}
       })();
     </script>
