@@ -11,7 +11,8 @@ test("loads the exact Sylva signing work surface without external network reques
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Sylva Signer" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Sign IPA files locally with your own certificate." })).toBeVisible();
+  await expect(page.getByText("Fully local IPA signing in your browser")).toBeVisible();
+  await expect(page.getByText("Private by design")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Sign IPA" })).toBeDisabled();
   await expect(page.locator("#ipa")).toBeAttached();
   await expect(page.locator("#p12")).toBeAttached();
@@ -20,6 +21,7 @@ test("loads the exact Sylva signing work surface without external network reques
   await expect(page.getByText("Cache certificate locally")).toBeVisible();
   await expect(page.locator("#bundle-id")).toBeVisible();
   await expect(page.getByText("Console")).toBeVisible();
+  await expect(page.getByText("Sylva Signer runs zsign as WebAssembly inside a dedicated browser worker.")).toBeVisible();
   await expect(page.getByText("Install QR")).toHaveCount(0);
   expect(external).toEqual([]);
 });

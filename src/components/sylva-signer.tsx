@@ -170,22 +170,28 @@ function logLevelFor(line: string): LogLevel {
 
 function LegalFooter() {
   return (
-    <footer className="mt-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-center text-xs text-muted-foreground">
-      <a className="transition-colors hover:text-blue-500" href="#privacy">
-        Privacy Policy
-      </a>
-      <a className="transition-colors hover:text-emerald-500" href="#legal">
-        Legal
-      </a>
-      <a
-        className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-        href="https://github.com/AntonP29"
-        target="_blank"
-        rel="noreferrer"
-      >
-        <GithubIcon size={14} />
-        AntonP29
-      </a>
+    <footer className="mt-10 flex flex-col items-center justify-center gap-3 text-center text-xs text-muted-foreground">
+      <p className="max-w-3xl italic leading-5">
+        Sylva Signer runs zsign as WebAssembly inside a dedicated browser worker. Your IPA,
+        certificate, provisioning profile, password, and signed output remain on this device.
+      </p>
+      <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+        <a className="transition-colors hover:text-blue-500" href="#privacy">
+          Privacy Policy
+        </a>
+        <a className="transition-colors hover:text-emerald-500" href="#legal">
+          Legal
+        </a>
+        <a
+          className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+          href="https://github.com/AntonP29"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <GithubIcon size={14} />
+          AntonP29
+        </a>
+      </nav>
     </footer>
   )
 }
@@ -462,22 +468,6 @@ function SignerApp() {
 
       <Separator className="my-8" />
 
-      <section className="mb-6 grid gap-3 md:grid-cols-[1fr_0.9fr] md:items-end">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            Private by design
-          </p>
-          <h2 className="mt-2 text-balance text-3xl font-semibold tracking-tight md:text-4xl">
-            Sign IPA files locally with your own certificate.
-          </h2>
-        </div>
-        <p className="text-sm leading-6 text-muted-foreground">
-          Sylva Signer runs zsign as WebAssembly inside a dedicated browser worker.
-          Your IPA, P12/PFX certificate, provisioning profile, password, dylibs, and
-          signed output remain on this device.
-        </p>
-      </section>
-
       <div className="grid flex-1 gap-6 lg:grid-cols-[1.15fr_1fr]">
         <div className="flex flex-col gap-6">
           <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5">
@@ -676,7 +666,7 @@ function SignerApp() {
 
         <div className="flex min-h-[420px] flex-col lg:min-h-0">
           <div className="flex-1">
-            <LogConsole logs={logs} />
+            <LogConsole logs={logs} active={state === 'signing'} />
           </div>
 
           {state === 'done' && outputs.length > 0 && (

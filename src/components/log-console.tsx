@@ -30,7 +30,7 @@ const levelLabel: Record<LogLevel, string> = {
   step: 'STEP',
 }
 
-export function LogConsole({ logs }: { logs: LogEntry[] }) {
+export function LogConsole({ logs, active = false }: { logs: LogEntry[]; active?: boolean }) {
   const endRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
@@ -39,11 +39,14 @@ export function LogConsole({ logs }: { logs: LogEntry[] }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card">
-      <AnimateIcon animateOnHover asChild>
+      <AnimateIcon animate={active} animateOnHover={!active} loop={active} asChild>
         <div className="group flex items-center gap-2 border-b border-border px-4 py-3">
           <Terminal
             size={16}
-            className="text-muted-foreground transition-colors group-hover:text-emerald-500"
+            className={cn(
+              'transition-colors group-hover:text-emerald-500',
+              active ? 'text-emerald-500' : 'text-muted-foreground',
+            )}
           />
           <span className="text-sm font-medium text-foreground">Console</span>
           <span className="ml-auto font-mono text-xs text-muted-foreground">
