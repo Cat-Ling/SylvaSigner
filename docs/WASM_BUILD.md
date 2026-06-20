@@ -29,5 +29,8 @@ The worker uses `@zip.js/zip.js` for the main IPA workflow. ZIP entries stream t
 browser compression APIs into MEMFS for fast synchronous signing, or into OPFS on
 lower-memory devices. The signed tree is streamed back into a compressed `Blob`, avoiding
 zsign's slow Asyncify ZIP loop and an additional full-size output `ArrayBuffer` copy.
+The archive writer receives each file's exact size, emits explicit directory entries, and
+disables unnecessary ZIP64 records so the resulting IPA remains compatible with iOS
+installation tooling.
 
 The web app keeps signing local to the browser worker. `-i/--install` and live OCSP socket checks are intentionally unsupported in browser-only mode.

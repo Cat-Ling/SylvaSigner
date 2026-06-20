@@ -1,10 +1,11 @@
-import { BlobReader, BlobWriter, ZipReader, ZipWriter, type FileEntry } from "@zip.js/zip.js";
+import { BlobReader, BlobWriter, Reader, ZipReader, ZipWriter, type FileEntry } from "@zip.js/zip.js";
 
 type ZipProgress = (completed: number, total: number) => void;
 
-type ArchiveFile = {
+type ArchiveEntry = {
   path: string;
-  handle: FileSystemFileHandle;
+  directory: boolean;
+  handle?: FileSystemFileHandle;
 };
 
 type IterableDirectoryHandle = FileSystemDirectoryHandle & {
@@ -164,41 +165,57 @@ export async function extractIpaToMemfs(
   }
 }
 
-function collectMemfsFiles(FS: any, directory: string, prefix: string, files: string[]) {
+type MemfsArchiveEntry = {
+  path: string;
+  directory: boolean;
+  size: number;
+};
+
+function collectMemfsEntries(
+  FS: any,
+  directory: string,
+  prefix: string,
+  entries: MemfsArchiveEntry[]
+) {
   for (const name of FS.readdir(directory)) {
     if (name === "." || name === "..") continue;
     const path = `${directory.replace(/\/$/, "")}/${name}`;
     const relative = prefix ? `${prefix}/${name}` : name;
     const stat = FS.stat(path);
-    if (FS.isDir(stat.mode)) collectMemfsFiles(FS, path, relative, files);
-    else if (FS.isFile(stat.mode)) files.push(relative);
+    if (FS.isDir(stat.mode)) {
+      entries.push({ path: `${relative}/`, directory: true, size: 0 });
+      collectMemfsEntries(FS, path, relative, entries);
+    } else if (FS.isFile(stat.mode)) {
+      entries.push({ path: relative, directory: false, size: stat.size });
+    }
   }
 }
 
-function memfsReadable(FS: any, path: string, size: number) {
-  const stream = FS.open(path, "r");
-  let offset = 0;
-  let closed = false;
-  const close = () => {
-    if (!closed) {
-      closed = true;
-      FS.close(stream);
+class MemfsReader extends Reader<null> {
+  private readonly FS: any;
+  private readonly stream: any;
+  private closed = false;
+
+  constructor(FS: any, path: string, size: number) {
+    super(null);
+    this.FS = FS;
+    this.stream = FS.open(path, "r");
+    this.size = size;
+  }
+
+  async readUint8Array(index: number, length: number) {
+    const chunk = new Uint8Array(Math.max(0, Math.min(length, this.size - index)));
+    if (!chunk.byteLength) return chunk;
+    const read = this.FS.read(this.stream, chunk, 0, chunk.byteLength, index);
+    return read === chunk.byteLength ? chunk : chunk.subarray(0, read);
+  }
+
+  close() {
+    if (!this.closed) {
+      this.closed = true;
+      this.FS.close(this.stream);
     }
-  };
-  return new ReadableStream<Uint8Array>({
-    pull(controller) {
-      if (offset >= size) {
-        close();
-        controller.close();
-        return;
-      }
-      const chunk = new Uint8Array(Math.min(1024 * 1024, size - offset));
-      const read = FS.read(stream, chunk, 0, chunk.byteLength, offset);
-      offset += read;
-      controller.enqueue(read === chunk.byteLength ? chunk : chunk.subarray(0, read));
-    },
-    cancel: close
-  });
+  }
 }
 
 export async function archiveMemfsToIpa(
@@ -207,14 +224,14 @@ export async function archiveMemfsToIpa(
   level: number,
   onProgress?: ZipProgress
 ) {
-  const files: string[] = [];
-  collectMemfsFiles(FS, source, "", files);
-  files.sort((left, right) => left.localeCompare(right));
-  const sizes = files.map((path) => FS.stat(`${source.replace(/\/$/, "")}/${path}`).size as number);
-  const total = sizes.reduce((sum, size) => sum + size, 0);
+  const entries: MemfsArchiveEntry[] = [];
+  collectMemfsEntries(FS, source, "", entries);
+  entries.sort((left, right) => left.path.localeCompare(right.path));
+  const total = entries.reduce((sum, entry) => sum + entry.size, 0);
   const output = new BlobWriter("application/zip");
   const writer = new ZipWriter(output, {
     level,
+    zip64: false,
     useCompressionStream: true,
     useWebWorkers: false,
     extendedTimestamp: false
@@ -222,15 +239,24 @@ export async function archiveMemfsToIpa(
 
   let completed = 0;
   onProgress?.(completed, total);
-  for (let index = 0; index < files.length; index++) {
-    const path = files[index];
-    const size = sizes[index];
-    await writer.add(path, memfsReadable(FS, `${source.replace(/\/$/, "")}/${path}`, size), {
-      level,
-      useCompressionStream: true,
-      useWebWorkers: false
-    });
-    completed += size;
+  for (const entry of entries) {
+    if (entry.directory) {
+      await writer.add(entry.path, undefined, { directory: true, zip64: false });
+      continue;
+    }
+
+    const reader = new MemfsReader(FS, `${source.replace(/\/$/, "")}/${entry.path}`, entry.size);
+    try {
+      await writer.add(entry.path, reader, {
+        level,
+        zip64: false,
+        useCompressionStream: true,
+        useWebWorkers: false
+      });
+    } finally {
+      reader.close();
+    }
+    completed += entry.size;
     onProgress?.(completed, total);
   }
   await writer.close();
@@ -240,14 +266,15 @@ export async function archiveMemfsToIpa(
 async function collectFiles(
   directory: FileSystemDirectoryHandle,
   prefix: string,
-  files: ArchiveFile[]
+  entries: ArchiveEntry[]
 ) {
   for await (const [name, handle] of (directory as IterableDirectoryHandle).entries()) {
     const path = prefix ? `${prefix}/${name}` : name;
     if (handle.kind === "directory") {
-      await collectFiles(handle as FileSystemDirectoryHandle, path, files);
+      entries.push({ path: `${path}/`, directory: true });
+      await collectFiles(handle as FileSystemDirectoryHandle, path, entries);
     } else {
-      files.push({ path, handle: handle as FileSystemFileHandle });
+      entries.push({ path, directory: false, handle: handle as FileSystemFileHandle });
     }
   }
 }
@@ -258,16 +285,19 @@ export async function archiveOpfsToIpa(
   level: number,
   onProgress?: ZipProgress
 ) {
-  const files: ArchiveFile[] = [];
-  await collectFiles(source, "", files);
-  files.sort((left, right) => left.path.localeCompare(right.path));
+  const entries: ArchiveEntry[] = [];
+  await collectFiles(source, "", entries);
+  entries.sort((left, right) => left.path.localeCompare(right.path));
   const total = (
-    await Promise.all(files.map(async (entry) => (await entry.handle.getFile()).size))
+    await Promise.all(
+      entries.map(async (entry) => (entry.directory ? 0 : (await entry.handle!.getFile()).size))
+    )
   ).reduce((sum, size) => sum + size, 0);
 
   const writable = await output.createWritable();
   const writer = new ZipWriter(writable, {
     level,
+    zip64: false,
     useCompressionStream: true,
     useWebWorkers: false,
     extendedTimestamp: false
@@ -276,10 +306,16 @@ export async function archiveOpfsToIpa(
   let completed = 0;
   onProgress?.(completed, total);
   try {
-    for (const entry of files) {
-      const file = await entry.handle.getFile();
+    for (const entry of entries) {
+      if (entry.directory) {
+        await writer.add(entry.path, undefined, { directory: true, zip64: false });
+        continue;
+      }
+
+      const file = await entry.handle!.getFile();
       await writer.add(entry.path, new BlobReader(file), {
         level,
+        zip64: false,
         lastModDate: file.lastModified ? new Date(file.lastModified) : new Date(),
         useCompressionStream: true,
         useWebWorkers: false

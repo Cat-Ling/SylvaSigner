@@ -27,6 +27,8 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 17, 2026.
 - Automatic low-memory browser-storage mode for mobile devices and large IPAs.
 - Streaming ZIP extraction/creation with bounded parallel decompression and native
   browser compression streams when available.
+- Conventional non-ZIP64 IPA output with explicit directory records for iOS installer
+  compatibility.
 - Live, internally scrolling zsign console output.
 - Transient animated `WAIT` status with byte-based percentage during extraction and
   archive compression, making long local operations visibly active without polluting logs.
@@ -128,7 +130,9 @@ and 21.5 seconds archiving. Results vary by device and IPA structure.
 
 The signed IPA may still differ modestly in size from the input because Mach-O code
 signature regions can grow and the archive is recompressed. It should no longer exhibit
-the much larger inflation caused by an uncompressed ZIP output.
+the much larger inflation caused by an uncompressed ZIP output. The streaming writer
+retains explicit `Payload/` directory records and avoids ZIP64 metadata, matching the
+conservative structure expected by iOS installation tooling.
 
 ## Previous IPAs
 

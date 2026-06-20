@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync, readdirSync } from "node:fs";
-import { TextReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
+import {
+  TextReader,
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipReader,
+  ZipWriter
+} from "@zip.js/zip.js";
 
 async function syntheticIpa() {
   const writer = new Uint8ArrayWriter();
@@ -147,23 +153,29 @@ test("streams IPA extraction and archiving outside zsign", async ({ page }) => {
         logs: string[];
         outputSize?: number;
         outputIsBlob?: boolean;
+        outputBytes?: number[];
         progress: string[];
         error?: string;
       }>((resolve) => {
         const logs: string[] = [];
         const progress: string[] = [];
-        worker.onmessage = (event) => {
+        worker.onmessage = async (event) => {
           const message = event.data;
           if (message.type === "log") logs.push(message.line);
           if (message.type === "progress") progress.push(message.progress.phase);
           if (message.type !== "done") return;
           worker.terminate();
           const output = message.result?.outputs?.[0];
+          const outputBytes =
+            output?.data instanceof Blob
+              ? Array.from(new Uint8Array(await output.data.arrayBuffer()))
+              : undefined;
           resolve({
             exitCode: message.result?.exitCode,
             logs,
             outputSize: output?.data instanceof Blob ? output.data.size : output?.data?.byteLength,
             outputIsBlob: output?.data instanceof Blob,
+            outputBytes,
             progress,
             error: message.error
           });
@@ -192,4 +204,11 @@ test("streams IPA extraction and archiving outside zsign", async ({ page }) => {
   expect(result.logs.join("\n")).toContain("Archive OK!");
   expect(result.progress).toContain("extract");
   expect(result.progress).toContain("archive");
+
+  const archive = new ZipReader(new Uint8ArrayReader(new Uint8Array(result.outputBytes!)));
+  const entries = await archive.getEntries();
+  await archive.close();
+  expect(entries[0]).toMatchObject({ filename: "Payload/", directory: true });
+  expect(entries.some((entry) => entry.directory)).toBe(true);
+  expect(entries.every((entry) => !entry.zip64)).toBe(true);
 });
