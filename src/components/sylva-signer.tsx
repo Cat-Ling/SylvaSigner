@@ -43,7 +43,7 @@ import {
   type IpaHistoryEntry,
 } from '@/history-api'
 import { saveOutput, signIpa } from '@/zsign-api'
-import type { OutputFile, SignIpaOptions } from '@/types'
+import type { OutputFile, SignIpaOptions, ZsignProgress } from '@/types'
 
 type SignState = 'idle' | 'signing' | 'done' | 'error'
 type Route = 'app' | 'privacy' | 'legal'
@@ -207,7 +207,6 @@ function signingProgressForLine(line: string, current: ProgressState): ProgressS
   if (clean.includes('signed ok')) return { value: Math.max(current.value, 88), label: 'Signature complete' }
   if (clean.includes('archiving:')) return { value: Math.max(current.value, 94), label: 'Archiving signed IPA' }
   if (clean.includes('archive ok')) return { value: Math.max(current.value, 98), label: 'Archive complete' }
-  if (clean.includes('done')) return { value: 100, label: 'Done' }
   return current
 }
 
@@ -759,6 +758,15 @@ function SignerApp() {
     [addLog],
   )
 
+  const updateWorkerProgress = React.useCallback((progress: ZsignProgress) => {
+    const ratio = progress.total > 0 ? Math.min(1, progress.completed / progress.total) : 1
+    if (progress.phase === 'extract') {
+      setSignProgress({ value: Math.round(10 + ratio * 15), label: 'Streaming IPA into browser storage' })
+    } else {
+      setSignProgress({ value: Math.round(90 + ratio * 9), label: 'Compressing signed IPA' })
+    }
+  }, [])
+
   const saveCertCacheFromInputs = React.useCallback(async () => {
     const next: CachedCertInfo = {
       p12: p12[0] ? await fileToCachedData(p12[0]) : cachedCertInfo?.p12,
@@ -803,7 +811,7 @@ function SignerApp() {
       password: certPassword || (cacheCert ? cachedCertInfo?.password ?? '' : ''),
       outputName: outputName.trim() || defaultOutputName(ipa[0]),
       bundleId: bundleId.trim(),
-      zipLevel: 1,
+      zipLevel: 6,
       metadata: false,
     }
   }, [bundleId, cacheCert, cachedCertInfo, certPassword, dylibs, ipa, outputName, p12, profiles])
@@ -824,7 +832,10 @@ function SignerApp() {
 
       addLog('step', 'Initializing local WebAssembly signing session')
       addLog('info', `Loaded payload: ${ipa[0]?.name ?? 'pending'}`)
-      const result = await signIpa(buildSignOptions(), { onLog: addWorkerLog })
+      const result = await signIpa(buildSignOptions(), {
+        onLog: addWorkerLog,
+        onProgress: updateWorkerProgress,
+      })
 
       setOutputs(result.outputs)
       if (result.exitCode === 0) {

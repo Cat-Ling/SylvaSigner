@@ -1,4 +1,28 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync, readdirSync } from "node:fs";
+import { TextReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
+
+async function syntheticIpa() {
+  const writer = new Uint8ArrayWriter();
+  const zip = new ZipWriter(writer, { level: 1, useWebWorkers: false });
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleDisplayName</key><string>Sylva Test</string>
+<key>CFBundleExecutable</key><string>SylvaTest</string>
+<key>CFBundleIdentifier</key><string>dev.sylva.test</string>
+<key>CFBundleName</key><string>SylvaTest</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>1.0</string>
+<key>CFBundleVersion</key><string>1</string>
+</dict></plist>`;
+  await zip.add("Payload/SylvaTest.app/Info.plist", new TextReader(plist));
+  await zip.add(
+    "Payload/SylvaTest.app/SylvaTest",
+    new Uint8ArrayReader(readFileSync("vendor/zsign/test/dylib/bin/demo1.dylib")),
+    { executable: true }
+  );
+  return zip.close();
+}
 
 test("loads the exact Sylva signing work surface without external network requests", async ({ page }) => {
   const external: string[] = [];
@@ -107,4 +131,65 @@ test("initializes the low-memory OPFS zsign runtime in a worker", async ({ page 
   expect(result.error).toBeUndefined();
   expect(result.exitCode).toBe(-1);
   expect(result.logs.join("\n")).toContain("Invalid path!");
+});
+
+test("streams IPA extraction and archiving outside zsign", async ({ page }) => {
+  await page.goto("/");
+  const workerAsset = readdirSync("dist/assets").find((name) => name.startsWith("zsign-worker-"));
+  expect(workerAsset).toBeTruthy();
+  const ipa = await syntheticIpa();
+  const result = await page.evaluate(
+    async ({ workerUrl, bytes }) => {
+      const worker = new Worker(workerUrl, { type: "module" });
+      const file = new File([new Uint8Array(bytes)], "Synthetic.ipa", { type: "application/zip" });
+      return new Promise<{
+        exitCode?: number;
+        logs: string[];
+        outputSize?: number;
+        outputIsBlob?: boolean;
+        progress: string[];
+        error?: string;
+      }>((resolve) => {
+        const logs: string[] = [];
+        const progress: string[] = [];
+        worker.onmessage = (event) => {
+          const message = event.data;
+          if (message.type === "log") logs.push(message.line);
+          if (message.type === "progress") progress.push(message.progress.phase);
+          if (message.type !== "done") return;
+          worker.terminate();
+          const output = message.result?.outputs?.[0];
+          resolve({
+            exitCode: message.result?.exitCode,
+            logs,
+            outputSize: output?.data instanceof Blob ? output.data.size : output?.data?.byteLength,
+            outputIsBlob: output?.data instanceof Blob,
+            progress,
+            error: message.error
+          });
+        };
+        worker.postMessage({
+          id: 1,
+          type: "run",
+          args: ["-a", "-z", "1", "-o", "/output/Synthetic_signed.ipa", "/blob/input.ipa"],
+          files: [{ path: "/blob/input.ipa", file, mode: "workerfs" }],
+          options: {
+            outputPaths: ["/output/Synthetic_signed.ipa"],
+            persistCache: false,
+            storageMode: "memory"
+          }
+        });
+      });
+    },
+    { workerUrl: `/assets/${workerAsset}`, bytes: Array.from(ipa) }
+  );
+
+  expect(result.error).toBeUndefined();
+  expect(result.exitCode).toBe(0);
+  expect(result.outputIsBlob).toBe(true);
+  expect(result.outputSize).toBeGreaterThan(0);
+  expect(result.logs.join("\n")).toContain("Unzip OK!");
+  expect(result.logs.join("\n")).toContain("Archive OK!");
+  expect(result.progress).toContain("extract");
+  expect(result.progress).toContain("archive");
 });

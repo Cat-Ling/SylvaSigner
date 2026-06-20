@@ -1,4 +1,10 @@
 import type { OutputFile, RunZsignOptions, RunZsignResult, VirtualInputFile } from "./types";
+import {
+  archiveMemfsToIpa,
+  archiveOpfsToIpa,
+  extractIpaToMemfs,
+  extractIpaToOpfs
+} from "./browser-zip";
 
 type WorkerRequest = {
   id: number;
@@ -33,9 +39,16 @@ type IterableDirectoryHandle = FileSystemDirectoryHandle & {
 
 const ctx = self as DedicatedWorkerGlobalScope;
 const importModule = new Function("url", "return import(url)") as (url: string) => Promise<ZsignImport>;
-const wasmCacheBust = "wasm_28a6421_opfs_io_v1";
+const wasmCacheBust = "wasm_28a6421_streaming_zip_v2";
 const opfsProjectDir = "sylva-zsign";
-const opfsLargeIpaThreshold = 96 * 1024 * 1024;
+const opfsLargeIpaThreshold = 256 * 1024 * 1024;
+
+type BrowserZipPlan = {
+  inputPath: string;
+  outputPath: string;
+  ipa: VirtualInputFile;
+  level: number;
+};
 
 function dirname(filePath: string) {
   const normalized = filePath.replaceAll("\\", "/");
@@ -56,6 +69,61 @@ function outputType(filePath: string) {
   return filePath.endsWith(".ipa") || filePath.endsWith(".zip")
     ? "application/zip"
     : "application/octet-stream";
+}
+
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+  return `${bytes} B`;
+}
+
+function browserZipPlan(request: WorkerRequest): BrowserZipPlan | null {
+  if (request.args.some((arg) => arg === "-x" || arg === "--metadata" || arg === "-i" || arg === "--install")) {
+    return null;
+  }
+  const inputPath = request.args.at(-1);
+  if (!inputPath || !inputPath.toLowerCase().endsWith(".ipa")) return null;
+  const ipa = request.files.find((entry) => normalizePath(entry.path) === normalizePath(inputPath));
+  const outputPath = request.options.outputPaths?.[0];
+  if (!ipa || !outputPath) return null;
+
+  const zipIndex = request.args.findIndex((arg) => arg === "-z" || arg === "--zip_level");
+  const parsedLevel = zipIndex >= 0 ? Number(request.args[zipIndex + 1]) : 1;
+  return {
+    inputPath,
+    outputPath: normalizePath(outputPath),
+    ipa,
+    level: Number.isInteger(parsedLevel) && parsedLevel >= 0 && parsedLevel <= 9 ? parsedLevel : 1
+  };
+}
+
+function folderSigningArgs(args: string[], plan: BrowserZipPlan, extractedPath: string) {
+  const result: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === "-o" || arg === "--output" || arg === "-z" || arg === "--zip_level") {
+      index++;
+      continue;
+    }
+    result.push(normalizePath(arg) === normalizePath(plan.inputPath) ? extractedPath : arg);
+  }
+  if (!result.includes("-f") && !result.includes("--force")) result.unshift("-f");
+  return result;
+}
+
+function progressEmitter(request: WorkerRequest, phase: "extract" | "archive") {
+  let previousPercent = -1;
+  return (completed: number, total: number) => {
+    const percent = total > 0 ? Math.floor((completed / total) * 100) : 100;
+    if (percent === previousPercent) return;
+    previousPercent = percent;
+    ctx.postMessage({
+      id: request.id,
+      type: "progress",
+      ok: true,
+      progress: { phase, completed, total }
+    });
+  };
 }
 
 function ensureDir(FS: any, dir: string) {
@@ -192,6 +260,7 @@ async function executeMemory(
 ): Promise<RunZsignResult> {
   const module = await loadModule("zsign", logs, emitLog);
   const FS = module.FS;
+  const zipPlan = browserZipPlan(request);
   ensureDir(FS, "/work");
   ensureDir(FS, "/output");
   ensureDir(FS, "/tmp");
@@ -203,8 +272,20 @@ async function executeMemory(
     await syncfs(FS, true);
   }
 
-  await mountFiles(module, request.files);
-  const result = await runMain(module, request.args, logs, emitLog);
+  await mountFiles(module, zipPlan ? request.files.filter((entry) => entry !== zipPlan.ipa) : request.files);
+  let nativeArgs = request.args;
+  if (zipPlan) {
+    const started = performance.now();
+    const unzipLine = `>>> Unzip:\t${formatBytes(zipPlan.ipa.file.size)} -> WebAssembly memory ...`;
+    logs.push(unzipLine);
+    emitLog(unzipLine);
+    await extractIpaToMemfs(zipPlan.ipa.file, FS, "/work/extracted", progressEmitter(request, "extract"));
+    const completeLine = `>>> Unzip OK! (${((performance.now() - started) / 1000).toFixed(3)}s)`;
+    logs.push(completeLine);
+    emitLog(completeLine);
+    nativeArgs = folderSigningArgs(request.args, zipPlan, "/work/extracted");
+  }
+  const result = await runMain(module, nativeArgs, logs, emitLog);
 
   if (request.options.persistCache !== false) {
     try {
@@ -216,6 +297,37 @@ async function executeMemory(
     }
   }
   if (result.trapped) return { exitCode: result.exitCode, logs, outputs: [] };
+
+  if (zipPlan && result.exitCode === 0) {
+    const started = performance.now();
+    const archiveLine = `>>> Archiving:\t${zipPlan.outputPath} ...`;
+    logs.push(archiveLine);
+    emitLog(archiveLine);
+    const output = await archiveMemfsToIpa(
+      FS,
+      "/work/extracted",
+      zipPlan.level,
+      progressEmitter(request, "archive")
+    );
+    const completeLine = `>>> Archive OK! (${(output.size / 1024 / 1024).toFixed(2)} MB) (${(
+      (performance.now() - started) /
+      1000
+    ).toFixed(3)}s)`;
+    logs.push(completeLine);
+    emitLog(completeLine);
+    return {
+      exitCode: result.exitCode,
+      logs,
+      outputs: [
+        {
+          path: zipPlan.outputPath,
+          name: basename(zipPlan.outputPath),
+          type: "application/zip",
+          data: output
+        }
+      ]
+    };
+  }
 
   const outputs: OutputFile[] = [];
   for (const filePath of request.options.outputPaths ?? []) {
@@ -262,7 +374,7 @@ async function readOpfsOutput(
       path: publicPath,
       name: basename(publicPath),
       type: outputType(publicPath),
-      data: await file.arrayBuffer()
+      data: file
     };
   } catch {
     return null;
@@ -304,7 +416,11 @@ function useOpfs(request: WorkerRequest) {
   if (iosWebKit) return false;
   const mobile = /Android|iPad|iPhone|iPod|Mobile/i.test(navigator.userAgent);
   const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  return mobile || totalBytes >= opfsLargeIpaThreshold || (deviceMemory !== undefined && deviceMemory <= 4);
+  return (
+    totalBytes >= opfsLargeIpaThreshold ||
+    (deviceMemory !== undefined && deviceMemory <= 4) ||
+    (mobile && deviceMemory === undefined)
+  );
 }
 
 async function executeOpfs(
@@ -321,6 +437,7 @@ async function executeOpfs(
   const wasmBase = `/opfs/${opfsProjectDir}/sessions/${sessionName}`;
   const mapPath = (path: string) => `${wasmBase}${normalizePath(path)}`;
   const relativePath = (path: string) => normalizePath(path).slice(1);
+  const zipPlan = browserZipPlan(request);
 
   const storageLine = ">>> Storage: browser disk mode (lower memory use)";
   logs.push(storageLine);
@@ -334,11 +451,27 @@ async function executeOpfs(
       getDirectory(session, "work", true)
     ]);
     for (const entry of request.files) {
+      if (zipPlan && entry === zipPlan.ipa) continue;
       await writeOpfsFile(session, relativePath(entry.path), entry.file);
     }
 
+    let nativeArgs = request.args;
+    if (zipPlan) {
+      const extractedRelative = "work/extracted";
+      const extracted = await getDirectory(session, extractedRelative, true);
+      const started = performance.now();
+      const unzipLine = `>>> Unzip:\t${formatBytes(zipPlan.ipa.file.size)} -> browser storage ...`;
+      logs.push(unzipLine);
+      emitLog(unzipLine);
+      await extractIpaToOpfs(zipPlan.ipa.file, extracted, progressEmitter(request, "extract"));
+      const completeLine = `>>> Unzip OK! (${((performance.now() - started) / 1000).toFixed(3)}s)`;
+      logs.push(completeLine);
+      emitLog(completeLine);
+      nativeArgs = folderSigningArgs(request.args, zipPlan, `/${extractedRelative}`);
+    }
+
     const module = await loadModule("zsign-opfs", logs, emitLog);
-    const args = request.args.map((arg) => (arg.startsWith("/") ? mapPath(arg) : arg));
+    const args = nativeArgs.map((arg) => (arg.startsWith("/") ? mapPath(arg) : arg));
     if (!args.includes("-t") && !args.includes("--temp_folder")) {
       args.unshift(mapPath("/tmp"));
       args.unshift("-t");
@@ -350,6 +483,28 @@ async function executeOpfs(
         throw new Error("The low-memory browser storage runtime could not start.");
       }
       return { exitCode: result.exitCode, logs, outputs: [] };
+    }
+
+    if (zipPlan && result.exitCode === 0) {
+      const started = performance.now();
+      const archiveLine = `>>> Archiving:\t${zipPlan.outputPath} ...`;
+      logs.push(archiveLine);
+      emitLog(archiveLine);
+      const outputParent = await getDirectory(session, dirname(relativePath(zipPlan.outputPath)), true);
+      const outputHandle = await outputParent.getFileHandle(basename(zipPlan.outputPath), { create: true });
+      const extracted = await getDirectory(session, "work/extracted");
+      const output = await archiveOpfsToIpa(
+        extracted,
+        outputHandle,
+        zipPlan.level,
+        progressEmitter(request, "archive")
+      );
+      const completeLine = `>>> Archive OK! (${(output.size / 1024 / 1024).toFixed(2)} MB) (${(
+        (performance.now() - started) /
+        1000
+      ).toFixed(3)}s)`;
+      logs.push(completeLine);
+      emitLog(completeLine);
     }
 
     const outputs: OutputFile[] = [];
@@ -390,7 +545,9 @@ ctx.addEventListener("message", async (event: MessageEvent<WorkerRequest>) => {
   if (request.type !== "run") return;
   try {
     const result = await execute(request);
-    const transfers = result.outputs.map((output) => output.data);
+    const transfers = result.outputs
+      .map((output) => output.data)
+      .filter((data): data is ArrayBuffer => data instanceof ArrayBuffer);
     ctx.postMessage({ id: request.id, type: "done", ok: true, result }, transfers);
   } catch (error) {
     ctx.postMessage({

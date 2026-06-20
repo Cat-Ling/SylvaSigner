@@ -23,7 +23,8 @@ export async function uploadSignedIpaToLitterbox(
   output: OutputFile,
   expiry: LitterboxExpiry = '1h',
 ) {
-  if (output.data.byteLength > litterboxMaxFileSize) {
+  const outputSize = output.data instanceof Blob ? output.data.size : output.data.byteLength
+  if (outputSize > litterboxMaxFileSize) {
     throw new Error('Litterbox accepts files up to 1 GB. Choose a smaller signed IPA.')
   }
 

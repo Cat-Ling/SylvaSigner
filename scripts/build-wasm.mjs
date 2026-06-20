@@ -116,7 +116,7 @@ function linkVariant(objects, outputName, extraFlags) {
     "-sINVOKE_RUN=0",
     "-sEXIT_RUNTIME=0",
     "-sALLOW_MEMORY_GROWTH=1",
-    "-sINITIAL_MEMORY=67108864",
+    "-sINITIAL_MEMORY=33554432",
     "-sFORCE_FILESYSTEM=1",
     ...(debugBuild ? ["-sASSERTIONS=2", "--profiling-funcs"] : []),
     ...extraFlags

@@ -1,9 +1,10 @@
-import type { OutputFile, RunZsignOptions, RunZsignResult, SignIpaOptions, VirtualInputFile } from "./types";
+import type { OutputFile, RunZsignOptions, RunZsignResult, SignIpaOptions, VirtualInputFile, ZsignProgress } from "./types";
 
 type PendingRun = {
   resolve: (value: RunZsignResult) => void;
   reject: (reason?: unknown) => void;
   onLog?: (line: string) => void;
+  onProgress?: (progress: ZsignProgress) => void;
 };
 
 let worker: Worker | null = null;
@@ -17,11 +18,12 @@ function getWorker() {
   worker.addEventListener("message", (event: MessageEvent) => {
     const message = event.data as {
       id: number;
-      type?: "log" | "done";
+      type?: "log" | "progress" | "done";
       ok: boolean;
       line?: string;
       result?: RunZsignResult;
       error?: string;
+      progress?: ZsignProgress;
     };
     const run = pending.get(message.id);
     if (!run) return;
@@ -29,11 +31,19 @@ function getWorker() {
       if (message.line !== undefined) run.onLog?.(message.line);
       return;
     }
+    if (message.type === "progress") {
+      if (message.progress) run.onProgress?.(message.progress);
+      return;
+    }
     pending.delete(message.id);
     if (message.ok && message.result) {
       run.resolve(message.result);
     } else {
       run.reject(new Error(message.error ?? "zsign worker failed"));
+    }
+    if (pending.size === 0) {
+      worker?.terminate();
+      worker = null;
     }
   });
   worker.addEventListener("error", (event) => {
@@ -53,11 +63,11 @@ export function runZsign(
   options: RunZsignOptions = {}
 ): Promise<RunZsignResult> {
   const id = nextId++;
-  const { onLog, ...workerOptions } = options;
+  const { onLog, onProgress, ...workerOptions } = options;
   const request = { id, type: "run", args, files, options: workerOptions };
 
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject, onLog });
+    pending.set(id, { resolve, reject, onLog, onProgress });
     getWorker().postMessage(request);
   });
 }
@@ -75,7 +85,7 @@ function pushIf(args: string[], condition: unknown, flag: string, value?: string
 
 export function signIpa(
   options: SignIpaOptions,
-  runOptions: Pick<RunZsignOptions, "onLog" | "storageMode"> = {}
+  runOptions: Pick<RunZsignOptions, "onLog" | "onProgress" | "storageMode"> = {}
 ): Promise<RunZsignResult> {
   const outputName = safeName(options.outputName || `signed-${options.ipa.name}`, "signed.ipa");
   const outputPath = `/output/${outputName.endsWith(".ipa") ? outputName : `${outputName}.ipa`}`;
@@ -144,7 +154,7 @@ export function signIpa(
   pushIf(args, options.minimumVersion, "-M", options.minimumVersion);
   pushIf(args, options.metadata, "-x", metadataPath);
 
-  args.push("-z", String(options.zipLevel ?? 1));
+  args.push("-z", String(options.zipLevel ?? 6));
   args.push("-o", outputPath);
   pushIf(args, options.password, "-p", options.password);
   args.push(ipaPath);

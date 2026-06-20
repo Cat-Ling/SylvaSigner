@@ -10,7 +10,13 @@ export interface OutputFile {
   path: string;
   name: string;
   type: string;
-  data: ArrayBuffer;
+  data: ArrayBuffer | Blob;
+}
+
+export interface ZsignProgress {
+  phase: "extract" | "archive";
+  completed: number;
+  total: number;
 }
 
 export interface RunZsignOptions {
@@ -19,6 +25,7 @@ export interface RunZsignOptions {
   persistCache?: boolean;
   storageMode?: "auto" | "memory" | "opfs";
   onLog?: (line: string) => void;
+  onProgress?: (progress: ZsignProgress) => void;
 }
 
 export interface RunZsignResult {

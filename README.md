@@ -25,13 +25,15 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 17, 2026.
 - Local IPA signing with zsign compiled to WebAssembly.
 - Dedicated browser worker so signing does not block the interface.
 - Automatic low-memory browser-storage mode for mobile devices and large IPAs.
+- Streaming ZIP extraction/creation with bounded parallel decompression and native
+  browser compression streams when available.
 - Live, internally scrolling zsign console output.
 - Signing-stage progress based on zsign log milestones.
 - IPA, P12/PFX, provisioning profile, optional dylib, password, output name, and bundle
   ID controls.
 - Output names default to the input name with `_signed` appended.
-- Signed IPAs use fast ZIP compression by default to avoid the large output inflation
-  caused by uncompressed (`-z 0`) archives.
+- Signed IPAs use browser-native ZIP compression by default to avoid the large output
+  inflation caused by uncompressed (`-z 0`) archives.
 - Optional P12/profile/password cache stored in browser IndexedDB.
 - Cached signing files and password are restored into the visible controls on reload.
 - Browser-local `Previous IPAs` history with `Fully Local`, `Active`, and `Expired`
@@ -110,11 +112,21 @@ accepts files up to **1 GB**; Sylva rejects larger upload attempts before sendin
     hosting.
 
 Large IPAs can still take significant time because extraction, signing, and re-archiving
-use the device's CPU and storage. On mobile, lower-memory devices, and IPAs of at least
-96 MB, Sylva automatically uses Origin Private File System (OPFS) storage for extracted
-files instead of holding the complete app bundle in WebAssembly memory. Keep the tab
-open and ensure the device has enough free browser storage for the extracted app and
-signed output.
+use the device's CPU and storage. Sylva streams ZIP entries through browser compression
+APIs and uses bounded parallel extraction. Devices reporting 4 GB of memory or less,
+mobile browsers that do not expose memory information, and IPAs of at least 256 MB use
+Origin Private File System (OPFS) storage for lower peak memory use. Keep the tab open
+and ensure the device has enough free browser storage for the extracted app and signed
+output.
+
+In a local Chromium comparison using a 93.06 MB IPA with 10,691 ZIP entries (about
+233 MB extracted), the previous zsign ZIP path took 282.8 seconds end-to-end. The
+streaming path completed in 50.3 seconds: 20.6 seconds extraction, 8.1 seconds signing,
+and 21.5 seconds archiving. Results vary by device and IPA structure.
+
+The signed IPA may still differ modestly in size from the input because Mach-O code
+signature regions can grow and the archive is recompressed. It should no longer exhibit
+the much larger inflation caused by an uncompressed ZIP output.
 
 ## Previous IPAs
 
@@ -231,10 +243,11 @@ Pinned inputs:
 - OpenSSL `3.5.7`
 - zsign commit `28a6421`
 
-The standard build uses `WORKERFS` for browser file inputs and `IDBFS` for the persistent
-zsign cache. The low-memory build uses WasmFS with OPFS and Asyncify so extracted app
-contents and archive output remain in browser-managed storage. Browser-specific patches
-and upstream details are documented in
+The standard build uses `WORKERFS` for certificate inputs, MEMFS for synchronous signing,
+and `IDBFS` for the persistent zsign cache. ZIP data is streamed into and out of MEMFS by
+the browser rather than zsign's native ZIP loop. The low-memory build uses WasmFS with
+OPFS and Asyncify so extracted app contents remain in browser-managed storage.
+Browser-specific patches and upstream details are documented in
 [`docs/UPSTREAM.md`](docs/UPSTREAM.md) and [`docs/WASM_BUILD.md`](docs/WASM_BUILD.md).
 
 ## Verification
@@ -252,13 +265,14 @@ normal page load.
 ## Browser and Platform Limits
 
 - Current Chromium is the primary browser target on desktop and Android.
-- Mobile and large-file jobs use OPFS automatically when the browser supports it, with
-  an automatic fallback to memory mode if setup fails.
+- Lower-memory devices and IPAs of at least 256 MB use OPFS automatically when the
+  browser supports it, with an automatic fallback to memory mode if setup fails.
 - iOS browsers use Apple's WebKit engine even when branded as Chrome. The pinned
   Emscripten OPFS backend is not currently treated as a reliable iOS path, so large IPA
   signing on iPhone/iPad remains more constrained than Android Chromium.
 - Large IPA performance depends on device CPU, memory, storage, and browser limits.
-- Signing progress is an estimate derived from zsign log stages, not byte-level progress.
+- ZIP progress is byte-based; signing progress between extraction and archiving is
+  estimated from zsign log stages.
 - Litterbox upload progress is indeterminate for CORS compatibility.
 - Native `-i/--install` through `ideviceinstaller` is unsupported in browser-only mode.
 - Raw-socket live OCSP checks are unsupported in browser WebAssembly.
