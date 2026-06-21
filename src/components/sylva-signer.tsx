@@ -1630,7 +1630,16 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
         />
       )}
 
-      {welcomeOpen && <WelcomeDialog onClose={() => setWelcomeOpen(false)} />}
+      {welcomeOpen && (
+        <WelcomeDialog
+          onClose={() => {
+            try {
+              window.localStorage.setItem('sylva_welcome_shown', 'true')
+            } catch {}
+            setWelcomeOpen(false)
+          }}
+        />
+      )}
 
       <LegalFooter />
     </main>
