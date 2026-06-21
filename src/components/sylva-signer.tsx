@@ -31,6 +31,7 @@ import { Download } from '@/components/animate-ui/icons/download'
 import { LoaderCircle } from '@/components/animate-ui/icons/loader-circle'
 import { CircleCheckBig } from '@/components/animate-ui/icons/circle-check-big'
 import { Send } from '@/components/animate-ui/icons/send'
+import { Upload } from '@/components/animate-ui/icons/upload'
 import { Copy } from '@/components/animate-ui/icons/copy'
 import { Lock } from '@/components/animate-ui/icons/lock'
 import { ClipboardList } from '@/components/animate-ui/icons/clipboard-list'
@@ -474,9 +475,8 @@ function WelcomeDialog({ onClose }: { onClose: () => void }) {
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
               Sylva Signer is a browser-based proof of concept for local IPA signing.
               Large files can take time because extraction, signing, and archiving happen
-              on this device. Supported mobile browsers and large-file jobs use
-              browser-managed storage to reduce memory pressure. Direct iPhone
-              installation requires an
+              on this device and may require several times the IPA size in available
+              memory. Direct iPhone installation requires an
               HTTPS-hosted IPA, so the built-in QR flow uploads only the signed IPA to a
               temporary provider after your explicit agreement.
             </p>
@@ -562,6 +562,114 @@ function LegalFooter() {
         </nav>
       </div>
     </footer>
+  )
+}
+
+function isMobileBrowser() {
+  if (typeof navigator === 'undefined') return false
+  return (
+    /Android|iPad|iPhone|iPod|Mobile/i.test(navigator.userAgent) ||
+    (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+  )
+}
+
+function MobileUnavailablePage() {
+  const steps = [
+    {
+      icon: Upload,
+      title: 'Select signing files',
+      description:
+        'Choose the IPA, P12 or PFX certificate, provisioning profile, and certificate password on your desktop.',
+    },
+    {
+      icon: Blocks,
+      title: 'Sign locally in the browser',
+      description:
+        'A dedicated browser worker runs zsign as WebAssembly. Your signing credentials and source IPA remain on the desktop device.',
+    },
+    {
+      icon: Download,
+      title: 'Save the signed IPA',
+      description:
+        'When signing finishes, download the completed IPA directly from the browser.',
+    },
+    {
+      icon: Send,
+      title: 'Optional iPhone installation',
+      description:
+        'With your approval, upload only the signed IPA to a temporary HTTPS provider, then scan the generated QR code with your iPhone.',
+    },
+  ]
+
+  return (
+    <main className="mx-auto flex min-h-svh w-full max-w-3xl flex-col px-5 py-8">
+      <header className="flex items-center justify-between gap-4">
+        <a href="#" className="flex items-center gap-3.5">
+          <div className="relative size-12 shrink-0 overflow-hidden rounded-2xl shadow-sm">
+            <img
+              src="/icon-light.png"
+              alt="Sylva Signer logo"
+              className="size-full scale-[1.18] object-cover dark:hidden"
+            />
+            <img
+              src="/icon-dark.png"
+              alt=""
+              aria-hidden
+              className="hidden size-full scale-[1.18] object-cover dark:block"
+            />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Sylva Signer</h1>
+            <p className="text-sm text-muted-foreground">Local IPA signing</p>
+          </div>
+        </a>
+        <ThemeToggle />
+      </header>
+
+      <section className="mt-8 overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="border-b border-border px-5 py-6 text-center">
+          <AnimateIcon animate loop loopDelay={500}>
+            <LockKeyhole
+              size={36}
+              className="mx-auto text-muted-foreground transition-colors hover:text-emerald-500"
+            />
+          </AnimateIcon>
+          <h2 className="mt-4 text-2xl font-semibold tracking-tight">
+            Desktop access required
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Sylva Signer is currently available only on desktop devices. Mobile browser
+            frameworks do not yet provide the memory and WebAssembly filesystem behavior
+            required for reliable IPA signing.
+          </p>
+        </div>
+
+        <div className="px-5 py-5">
+          <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            Desktop workflow
+          </p>
+          <ol className="divide-y divide-border">
+            {steps.map(({ icon: StepIcon, title, description }, index) => (
+              <li key={title} className="flex gap-3 py-4">
+                <AnimateIcon animateOnHover>
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <StepIcon size={17} />
+                  </div>
+                </AnimateIcon>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {index + 1}. {title}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <LegalFooter />
+    </main>
   )
 }
 
@@ -1248,6 +1356,10 @@ export function SylvaSigner() {
 
   if (route === 'privacy' || route === 'legal') {
     return <InfoPage route={route} />
+  }
+
+  if (isMobileBrowser()) {
+    return <MobileUnavailablePage />
   }
 
   return <SignerApp />

@@ -164,7 +164,7 @@ uploaded to Litterbox.
 Requirements:
 
 - Node.js with npm
-- Current Chromium-based browser recommended; Android Chromium is supported
+- Current desktop Chromium-based browser
 
 ```powershell
 npm install
@@ -270,13 +270,13 @@ normal page load.
 
 ## Browser and Platform Limits
 
-- Current Chromium is the primary browser target on desktop and Android.
+- Current desktop Chromium is the supported browser target.
+- iOS and Android visitors receive a desktop-required notice because mobile browser
+  memory and WebAssembly filesystem limits do not yet permit reliable IPA signing.
 - The stable path uses WebAssembly memory; the experimental OPFS runtime is not selected
   automatically.
-- iOS browsers use Apple's WebKit engine even when branded as Chrome, so large IPA
-  signing on iPhone/iPad remains constrained by WebKit memory limits.
-- Mobile extraction runs one entry at a time and preallocates each destination file, but
-  very large expanded apps can still exceed a device's per-tab memory allowance.
+- iOS browsers use Apple's WebKit engine even when branded as Chrome, and both iOS and
+  Android browsers can terminate memory-intensive signing workers without recovery.
 - Large IPA performance depends on device CPU, memory, storage, and browser limits.
 - Extraction progress is byte-based; native zsign archive activity is indeterminate.
 - Litterbox upload progress is indeterminate for CORS compatibility.

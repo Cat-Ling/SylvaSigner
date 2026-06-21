@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { devices, expect, test } from "@playwright/test";
 import { readFileSync, readdirSync } from "node:fs";
 import {
   TextReader,
@@ -87,6 +87,30 @@ test("opens previous IPA history from the header", async ({ page }) => {
   await page.getByRole("button", { name: "Previous IPAs" }).click();
   await expect(page.getByRole("heading", { name: "Previous IPAs" })).toBeVisible();
   await expect(page.getByText("No signed IPA history yet.")).toBeVisible();
+});
+
+test.describe("mobile availability", () => {
+  const iphone = devices["iPhone 13"];
+  test.use({
+    viewport: iphone.viewport,
+    deviceScaleFactor: iphone.deviceScaleFactor,
+    isMobile: iphone.isMobile,
+    hasTouch: iphone.hasTouch,
+    userAgent: iphone.userAgent
+  });
+
+  test("shows the desktop requirement and signing workflow", async ({ page }) => {
+    await page.goto("/");
+
+    await expect(page.getByRole("heading", { name: "Desktop access required" })).toBeVisible();
+    await expect(page.getByText("Sylva Signer is currently available only on desktop devices.")).toBeVisible();
+    await expect(page.getByText("Select signing files")).toBeVisible();
+    await expect(page.getByText("Sign locally in the browser")).toBeVisible();
+    await expect(page.getByText("Optional iPhone installation")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign IPA" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Privacy Policy" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Legal" })).toBeVisible();
+  });
 });
 
 test("initializes the low-memory OPFS zsign runtime in a worker", async ({ page }) => {
