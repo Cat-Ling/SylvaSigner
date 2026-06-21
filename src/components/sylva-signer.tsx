@@ -485,7 +485,7 @@ function PreviousIpasDialog({
 
 function WelcomeMark() {
   return (
-    <div className="welcome-mark relative mx-auto size-44 md:size-52" aria-label="Sylva Signer">
+    <div className="welcome-mark relative mx-auto size-32 md:size-36" aria-label="Sylva Signer">
       <img
         src="/icon-light.png"
         alt=""
