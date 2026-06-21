@@ -12,6 +12,7 @@ export type IpaHistoryEntry = {
   ipaUrl?: string
   manifestUrl?: string
   installUrl?: string
+  iconDataUrl?: string
 }
 
 const historyKey = 'sylva-signer-ipa-history'
@@ -38,12 +39,14 @@ export function writeIpaHistory(entries: IpaHistoryEntry[]) {
 export function createLocalHistoryEntry(
   name: string,
   metadata: Partial<InstallMetadata>,
+  iconDataUrl?: string,
 ): IpaHistoryEntry {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     name,
     signedAt: new Date().toISOString(),
     metadata,
+    iconDataUrl,
   }
 }
 

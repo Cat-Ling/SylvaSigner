@@ -26,8 +26,7 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 17, 2026.
 - Dedicated browser worker so signing does not block the interface.
 - Streaming ZIP extraction with bounded parallel decompression and native browser
   decompression streams when available, followed by zsign-native IPA archiving.
-- Mobile-aware sequential extraction and exact-size MEMFS allocation to reduce transient
-  memory spikes on WebKit and Android browsers.
+- Exact-size MEMFS allocation to reduce transient extraction memory spikes.
 - Conventional non-ZIP64 IPA output with explicit directory records for iOS installer
   compatibility.
 - Live, internally scrolling zsign console output.
@@ -36,13 +35,17 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 17, 2026.
 - Signing-stage progress based on zsign log milestones.
 - IPA, P12/PFX, provisioning profile, optional dylib, password, output name, and bundle
   ID controls.
+- Automatic app name, bundle ID, version, artwork, and IPA-size extraction when an IPA
+  is selected; the detected bundle ID is loaded into the editable bundle-ID field.
+- Local P12 certificate common-name/expiration parsing and provisioning-profile
+  name/expiration details in the app summary tile.
 - Output names default to the input name with `_signed` appended.
 - Signed IPAs use zsign's native minizip writer and compressed output for parity with the
   upstream CLI and iOS installation tooling.
 - Optional P12/profile/password cache stored in browser IndexedDB.
 - Cached signing files and password are restored into the visible controls on reload.
 - Browser-local `Previous IPAs` history with `Fully Local`, `Active`, and `Expired`
-  states.
+  states, app artwork, and active install QR codes retained until their links expire.
 - Local download of the signed IPA.
 - Optional QR/direct iPhone install flow using Litterbox and Palera.
 - Temporary hosting choices of `1h`, `12h`, `24h`, or `72h`.
@@ -82,6 +85,7 @@ History is stored in browser `localStorage` and keeps:
 
 - Signed output name and signing time
 - Detected bundle metadata when available
+- Compact app artwork thumbnail when available
 - Temporary IPA/manifest/install URLs when QR installation was used
 - Selected temporary-host duration and calculated expiration time
 
@@ -109,7 +113,7 @@ accepts files up to **1 GB**; Sylva rejects larger upload attempts before sendin
 3. Select a `.p12` or `.pfx` signing certificate.
 4. Select one or more `.mobileprovision` files.
 5. Enter the certificate password.
-6. Optionally select dylibs to inject or enter a replacement bundle ID.
+6. Optionally select dylibs to inject or edit the detected bundle ID.
 7. Optionally enable local certificate caching.
 8. Click `Sign IPA` and keep the tab open while the worker runs.
 9. Download the signed IPA locally.
@@ -142,6 +146,7 @@ The `Previous IPAs` button beside the theme control opens local signing history.
 - `Expired`: the selected Litterbox duration has elapsed.
 - `Copy Download URL`: copies the temporary Litterbox IPA URL.
 - `Copy iPhone Install Link`: copies the generated `itms-services://` link.
+- Active entries display their install QR until the calculated link expiration time.
 
 Clearing history removes these local records and URLs. It does not control files already
 uploaded to Litterbox.

@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { DotLottie } from '@lottiefiles/dotlottie-web'
+import * as QRCode from 'qrcode'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,6 +37,14 @@ import { Copy } from '@/components/animate-ui/icons/copy'
 import { Lock } from '@/components/animate-ui/icons/lock'
 import { ClipboardList } from '@/components/animate-ui/icons/clipboard-list'
 import type { InstallMetadata } from '@/install-api'
+import {
+  extractAppMetadata,
+  extractCertificateMetadata,
+  extractProvisioningMetadata,
+  type AppMetadata,
+  type CertificateMetadata,
+  type ProvisioningMetadata,
+} from '@/app-metadata'
 import {
   clearIpaHistory,
   createLocalHistoryEntry,
@@ -272,6 +281,8 @@ function PreviousIpasDialog({
   onClear: () => void
 }) {
   const [copiedId, setCopiedId] = React.useState('')
+  const [qrCodes, setQrCodes] = React.useState<Record<string, string>>({})
+  const [, setExpiryClock] = React.useState(Date.now)
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -280,6 +291,34 @@ function PreviousIpasDialog({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setExpiryClock(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  React.useEffect(() => {
+    let cancelled = false
+    const activeEntries = entries.filter(
+      (entry) => entry.installUrl && !isExpired(entry),
+    )
+    void Promise.all(
+      activeEntries.map(async (entry) => [
+        entry.id,
+        await QRCode.toDataURL(entry.installUrl!, {
+          errorCorrectionLevel: 'M',
+          margin: 1,
+          scale: 5,
+          color: { dark: '#111827', light: '#ffffff' },
+        }),
+      ] as const),
+    ).then((values) => {
+      if (!cancelled) setQrCodes(Object.fromEntries(values))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [entries])
 
   const copyValue = async (id: string, value: string) => {
     await navigator.clipboard.writeText(value)
@@ -331,11 +370,23 @@ function PreviousIpasDialog({
                     className="rounded-xl border border-border bg-background px-4 py-3"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{entry.name}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Signed {formatHistoryDate(entry.signedAt)}
-                        </p>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted text-muted-foreground">
+                          {entry.iconDataUrl ? (
+                            <img src={entry.iconDataUrl} alt="" className="size-full object-cover" />
+                          ) : (
+                            <Layers size={22} />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {entry.metadata?.appName || entry.name}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">{entry.name}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Signed {formatHistoryDate(entry.signedAt)}
+                          </p>
+                        </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         {!hasLinks ? (
@@ -360,7 +411,17 @@ function PreviousIpasDialog({
                     )}
 
                     {hasLinks && (
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="mt-3 flex flex-wrap items-end gap-3">
+                        {!expired && qrCodes[entry.id] && (
+                          <div className="rounded-xl border border-border bg-white p-1.5">
+                            <img
+                              src={qrCodes[entry.id]}
+                              alt={`Install ${entry.metadata?.appName || entry.name} QR code`}
+                              className="size-24"
+                            />
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
                         <AnimateIcon animateOnHover asChild>
                           <Button
                             type="button"
@@ -393,6 +454,7 @@ function PreviousIpasDialog({
                               : 'Copy iPhone Install Link'}
                           </Button>
                         </AnimateIcon>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -784,6 +846,132 @@ function InfoPage({ route }: { route: Exclude<Route, 'app'> }) {
   )
 }
 
+function formatMetadataDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date)
+}
+
+function formatMetadataSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(bytes >= 100 * 1024 * 1024 ? 0 : 1)} MB`
+}
+
+function AppDetailsTile({
+  ipa,
+  app,
+  appLoading,
+  appError,
+  certificate,
+  certificateMessage,
+  profiles,
+}: {
+  ipa: File
+  app: AppMetadata | null
+  appLoading: boolean
+  appError: string
+  certificate: CertificateMetadata | null
+  certificateMessage: string
+  profiles: ProvisioningMetadata[]
+}) {
+  const details = [
+    { icon: Fingerprint, label: 'Bundle ID', value: app?.bundleId || 'Reading metadata...' },
+    { icon: Layers, label: 'Version', value: app?.version || 'Unknown' },
+    { icon: Download, label: 'IPA size', value: formatMetadataSize(ipa.size) },
+  ]
+
+  return (
+    <section className="mb-4 overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="flex items-center gap-4 border-b border-border px-4 py-4">
+        <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-muted text-muted-foreground shadow-sm">
+          {app?.iconDataUrl ? (
+            <img
+              src={app.iconDataUrl}
+              alt={`${app.appName} icon`}
+              className="size-full object-cover"
+              onError={(event) => {
+                event.currentTarget.style.display = 'none'
+              }}
+            />
+          ) : appLoading ? (
+            <LoaderCircle size={24} animate loop />
+          ) : (
+            <Layers size={26} />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h2 className="truncate text-base font-semibold">
+              {app?.appName || (appLoading ? 'Reading app details...' : ipa.name)}
+            </h2>
+            {app && (
+              <AnimateIcon animate>
+                <CircleCheckBig size={16} className="shrink-0 text-emerald-500" />
+              </AnimateIcon>
+            )}
+          </div>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{ipa.name}</p>
+          {appError && <p className="mt-1 text-xs text-destructive">{appError}</p>}
+        </div>
+      </div>
+
+      <div className="grid gap-px bg-border sm:grid-cols-3">
+        {details.map(({ icon: DetailIcon, label, value }) => (
+          <div key={label} className="min-w-0 bg-card px-4 py-3">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <AnimateIcon animateOnHover>
+                <DetailIcon size={14} className="transition-colors hover:text-blue-500" />
+              </AnimateIcon>
+              {label}
+            </div>
+            <p className="mt-1 truncate text-sm font-medium" title={value}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {(certificateMessage || certificate || profiles.length > 0) && (
+        <div className="space-y-3 border-t border-border px-4 py-4">
+          <div className="flex items-start gap-3">
+            <AnimateIcon animateOnHover>
+              <BadgeCheck size={19} className="mt-0.5 text-emerald-500" />
+            </AnimateIcon>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Signing certificate</p>
+              <p className="truncate text-sm font-medium">
+                {certificate?.name || certificateMessage}
+              </p>
+              {certificate && (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Expires {formatMetadataDate(certificate.expiresAt)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {profiles.map((profile) => (
+            <div key={`${profile.name}-${profile.expiresAt}`} className="flex items-start gap-3">
+              <AnimateIcon animateOnHover>
+                <LockKeyhole size={19} className="mt-0.5 text-amber-500" />
+              </AnimateIcon>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Provisioning profile</p>
+                <p className="truncate text-sm font-medium">{profile.name}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Expires {formatMetadataDate(profile.expiresAt)}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function SignerApp() {
   const [ipa, setIpa] = React.useState<File[]>([])
   const [p12, setP12] = React.useState<File[]>([])
@@ -796,6 +984,12 @@ function SignerApp() {
   const [cacheCert, setCacheCert] = React.useState(false)
   const [cachedCertInfo, setCachedCertInfo] = React.useState<CachedCertInfo | null>(null)
   const [outputNameTouched, setOutputNameTouched] = React.useState(false)
+  const [appMetadata, setAppMetadata] = React.useState<AppMetadata | null>(null)
+  const [appMetadataLoading, setAppMetadataLoading] = React.useState(false)
+  const [appMetadataError, setAppMetadataError] = React.useState('')
+  const [certificateMetadata, setCertificateMetadata] = React.useState<CertificateMetadata | null>(null)
+  const [certificateMessage, setCertificateMessage] = React.useState('')
+  const [profileMetadata, setProfileMetadata] = React.useState<ProvisioningMetadata[]>([])
 
   const [logs, setLogs] = React.useState<LogEntry[]>([])
   const [state, setState] = React.useState<SignState>('idle')
@@ -849,6 +1043,96 @@ function SignerApp() {
   React.useEffect(() => {
     if (!outputNameTouched) setOutputName(defaultOutputName(ipa[0]))
   }, [ipa, outputNameTouched])
+
+  React.useEffect(() => {
+    const file = ipa[0]
+    let cancelled = false
+    setAppMetadata(null)
+    setAppMetadataError('')
+    setAppMetadataLoading(Boolean(file))
+    setBundleId('')
+    if (!file) return
+
+    void extractAppMetadata(file)
+      .then((metadata) => {
+        if (cancelled) return
+        setAppMetadata(metadata)
+        setBundleId(metadata.bundleId)
+        const nextMetadata = {
+          appName: metadata.appName,
+          bundleId: metadata.bundleId,
+          version: metadata.version,
+        }
+        installMetadataRef.current = nextMetadata
+        setInstallMetadata(nextMetadata)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAppMetadataError(error instanceof Error ? error.message : String(error))
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAppMetadataLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [ipa])
+
+  React.useEffect(() => {
+    const file = p12[0]
+    let cancelled = false
+    setCertificateMetadata(null)
+    setCertificateMessage(file ? 'Reading certificate...' : '')
+    if (!file) return
+
+    const timer = window.setTimeout(() => {
+      void extractCertificateMetadata(file, certPassword)
+        .then((metadata) => {
+          if (!cancelled) {
+            setCertificateMetadata(metadata)
+            setCertificateMessage('')
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCertificateMessage(
+              certPassword
+                ? 'Certificate details unavailable. Check the password.'
+                : 'Enter the certificate password to view its details.',
+            )
+          }
+        })
+    }, 180)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [certPassword, p12])
+
+  React.useEffect(() => {
+    let cancelled = false
+    if (profiles.length === 0) {
+      setProfileMetadata([])
+      return
+    }
+    void Promise.all(
+      profiles.map(async (profile) => {
+        try {
+          return await extractProvisioningMetadata(profile)
+        } catch {
+          return { name: profile.name, expiresAt: '' }
+        }
+      }),
+    ).then((metadata) => {
+      if (!cancelled) setProfileMetadata(metadata)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [profiles])
 
   const addLog = React.useCallback((level: LogLevel, message: string) => {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false })
@@ -941,8 +1225,15 @@ function SignerApp() {
     setState('signing')
     setLogs([])
     setOutputs([])
-    setInstallMetadata({})
-    installMetadataRef.current = {}
+    const initialMetadata = appMetadata
+      ? {
+          appName: appMetadata.appName,
+          bundleId: bundleId.trim() || appMetadata.bundleId,
+          version: appMetadata.version,
+        }
+      : {}
+    setInstallMetadata(initialMetadata)
+    installMetadataRef.current = initialMetadata
     setInstallDialogOpen(false)
     setCurrentHistoryId('')
     setConsoleActivity(null)
@@ -964,7 +1255,13 @@ function SignerApp() {
           result.outputs.find((output) => output.name.toLowerCase().endsWith('.ipa')) ??
           result.outputs[0]
         if (signedOutput) {
-          const entry = createLocalHistoryEntry(signedOutput.name, installMetadataRef.current)
+          const entry = createLocalHistoryEntry(
+            signedOutput.name,
+            installMetadataRef.current,
+            appMetadata?.iconDataUrl && appMetadata.iconDataUrl.length <= 300_000
+              ? appMetadata.iconDataUrl
+              : undefined,
+          )
           setCurrentHistoryId(entry.id)
           setHistoryEntries(upsertIpaHistoryEntry(entry))
         }
@@ -1158,10 +1455,13 @@ function SignerApp() {
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="bundle-id">Custom bundle ID</Label>
+                <Label htmlFor="bundle-id" className="flex items-center gap-1.5">
+                  <Fingerprint size={14} className="text-muted-foreground" />
+                  Bundle ID
+                </Label>
                 <Input
                   id="bundle-id"
-                  placeholder="Leave blank for original"
+                  placeholder="Detected from IPA"
                   value={bundleId}
                   onChange={(e) => setBundleId(e.target.value)}
                 />
@@ -1270,6 +1570,17 @@ function SignerApp() {
         </div>
 
         <div className="flex min-h-[420px] min-w-0 flex-col lg:min-h-0">
+          {ipa[0] && (
+            <AppDetailsTile
+              ipa={ipa[0]}
+              app={appMetadata}
+              appLoading={appMetadataLoading}
+              appError={appMetadataError}
+              certificate={certificateMetadata}
+              certificateMessage={certificateMessage}
+              profiles={profileMetadata}
+            />
+          )}
           <div className="h-[420px] max-h-[520px] lg:h-[calc(100vh-12rem)] lg:max-h-[680px]">
             <LogConsole
               logs={logs}

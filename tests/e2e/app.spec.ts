@@ -1,5 +1,6 @@
 import { devices, expect, test } from "@playwright/test";
 import { readFileSync, readdirSync } from "node:fs";
+import forge from "node-forge";
 import {
   TextReader,
   Uint8ArrayReader,
@@ -18,16 +19,46 @@ async function syntheticIpa() {
 <key>CFBundleIdentifier</key><string>dev.sylva.test</string>
 <key>CFBundleName</key><string>SylvaTest</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFiles</key><array><string>AppIcon60x60</string></array>
 <key>CFBundleShortVersionString</key><string>1.0</string>
 <key>CFBundleVersion</key><string>1</string>
 </dict></plist>`;
   await zip.add("Payload/SylvaTest.app/Info.plist", new TextReader(plist));
+  await zip.add(
+    "Payload/SylvaTest.app/AppIcon60x60@2x.png",
+    new Uint8ArrayReader(
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64"
+      )
+    )
+  );
   await zip.add(
     "Payload/SylvaTest.app/SylvaTest",
     new Uint8ArrayReader(readFileSync("vendor/zsign/test/dylib/bin/demo1.dylib")),
     { executable: true }
   );
   return zip.close();
+}
+
+function syntheticSigningFiles() {
+  const keys = forge.pki.rsa.generateKeyPair(1024);
+  const certificate = forge.pki.createCertificate();
+  certificate.publicKey = keys.publicKey;
+  certificate.serialNumber = "01";
+  certificate.validity.notBefore = new Date("2026-01-01T12:00:00Z");
+  certificate.validity.notAfter = new Date("2030-06-22T12:00:00Z");
+  certificate.setSubject([{ name: "commonName", value: "Sylva Test Certificate" }]);
+  certificate.setIssuer(certificate.subject.attributes);
+  certificate.sign(keys.privateKey, forge.md.sha256.create());
+  const p12 = forge.pkcs12.toPkcs12Asn1(keys.privateKey, [certificate], "sylva-test");
+  const p12Bytes = Buffer.from(forge.asn1.toDer(p12).getBytes(), "binary");
+  const profile = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>Name</key><string>Sylva Development Profile</string>
+<key>ExpirationDate</key><date>2030-07-23T12:00:00Z</date>
+</dict></plist>`);
+  return { p12Bytes, profile };
 }
 
 test("loads the exact Sylva signing work surface without external network requests", async ({ page }) => {
@@ -68,6 +99,51 @@ test("derives output name from selected IPA and keeps live logs visible", async 
   await expect(page.getByText("Waiting for input. Drop your files and press Sign.")).toBeVisible();
 });
 
+test("extracts app metadata and fills the bundle ID when an IPA is selected", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Continue" }).click();
+  const ipa = await syntheticIpa();
+  await page.setInputFiles("#ipa", {
+    name: "SylvaTest.ipa",
+    mimeType: "application/zip",
+    buffer: Buffer.from(ipa)
+  });
+
+  await expect(page.getByRole("heading", { name: "Sylva Test" })).toBeVisible();
+  await expect(page.getByText("dev.sylva.test", { exact: true })).toBeVisible();
+  await expect(page.locator("#bundle-id")).toHaveValue("dev.sylva.test");
+  await expect(page.getByAltText("Sylva Test icon")).toBeVisible();
+  await expect(page.getByText("1.0", { exact: true })).toBeVisible();
+});
+
+test("shows certificate and provisioning expiration details locally", async ({ page }) => {
+  const { p12Bytes, profile } = syntheticSigningFiles();
+  await page.goto("/");
+  await page.getByRole("button", { name: "Continue" }).click();
+  const ipa = await syntheticIpa();
+  await page.setInputFiles("#ipa", {
+    name: "SylvaTest.ipa",
+    mimeType: "application/zip",
+    buffer: Buffer.from(ipa)
+  });
+  await page.setInputFiles("#p12", {
+    name: "sylva-test.p12",
+    mimeType: "application/x-pkcs12",
+    buffer: p12Bytes
+  });
+  await page.setInputFiles("#profiles", {
+    name: "sylva-test.mobileprovision",
+    mimeType: "application/octet-stream",
+    buffer: profile
+  });
+  await page.locator("#cert-password").fill("sylva-test");
+
+  await expect(page.getByText("Sylva Test Certificate", { exact: true })).toBeVisible();
+  await expect(page.getByText("Expires Jun 22, 2030", { exact: true })).toBeVisible();
+  await expect(page.getByText("Sylva Development Profile", { exact: true })).toBeVisible();
+  await expect(page.getByText("Expires Jul 23, 2030", { exact: true })).toBeVisible();
+});
+
 test("opens privacy and legal pages from the footer", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Continue" }).click();
@@ -87,6 +163,32 @@ test("opens previous IPA history from the header", async ({ page }) => {
   await page.getByRole("button", { name: "Previous IPAs" }).click();
   await expect(page.getByRole("heading", { name: "Previous IPAs" })).toBeVisible();
   await expect(page.getByText("No signed IPA history yet.")).toBeVisible();
+});
+
+test("retains an active install QR and app icon in previous IPAs", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("sylva-signer-ipa-history", JSON.stringify([{
+      id: "active-entry",
+      name: "SylvaTest_signed.ipa",
+      signedAt: new Date().toISOString(),
+      metadata: { appName: "Sylva Test", bundleId: "dev.sylva.test", version: "1.0" },
+      iconDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      provider: "litterbox",
+      uploadExpiry: "1h",
+      uploadedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      ipaUrl: "https://litter.catbox.moe/example.ipa",
+      manifestUrl: "https://api.palera.in/example",
+      installUrl: "itms-services://?action=download-manifest&url=https%3A%2F%2Fexample.test"
+    }]));
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Previous IPAs" }).click();
+
+  await expect(page.getByText("Sylva Test", { exact: true })).toBeVisible();
+  await expect(page.getByAltText("Install Sylva Test QR code")).toBeVisible();
+  await expect(page.getByText("Active", { exact: true })).toBeVisible();
 });
 
 test.describe("mobile availability", () => {
