@@ -96,8 +96,16 @@ const providerLibs = ["libdefault.a", "liblegacy.a"]
   .map((name) => path.join(libDir, name))
   .filter(existsSync);
 
-function linkVariant(objects, outputName, extraFlags, initialMemory = 33554432) {
-  const linkDir = path.join(objDir, "linked", path.basename(outputName, ".mjs"));
+function linkVariant(
+  objects,
+  outputName,
+  extraFlags,
+  initialMemory = 33554432,
+  maximumMemory = 2147483648,
+  exportEsModule = true
+) {
+  const outputBase = outputName.replace(/\.(?:mjs|js)$/, "");
+  const linkDir = path.join(objDir, "linked", outputName);
   rmSync(linkDir, { recursive: true, force: true });
   mkdirSync(linkDir, { recursive: true });
   const stagedOutput = path.join(linkDir, outputName);
@@ -110,21 +118,22 @@ function linkVariant(objects, outputName, extraFlags, initialMemory = 33554432) 
     "-o",
     stagedOutput,
     "-sMODULARIZE=1",
-    "-sEXPORT_ES6=1",
     "-sEXPORT_NAME=createZsignModule",
+    ...(exportEsModule ? ["-sEXPORT_ES6=1"] : []),
     "-sENVIRONMENT=web,worker",
     "-sINVOKE_RUN=0",
     "-sEXIT_RUNTIME=0",
     "-sALLOW_MEMORY_GROWTH=1",
     `-sINITIAL_MEMORY=${initialMemory}`,
+    `-sMAXIMUM_MEMORY=${maximumMemory}`,
     "-sFORCE_FILESYSTEM=1",
     ...(debugBuild ? ["-sASSERTIONS=2", "--profiling-funcs"] : []),
     ...extraFlags
   ]);
   copyFileSync(stagedOutput, path.join(outputDir, outputName));
   copyFileSync(
-    stagedOutput.replace(/\.mjs$/, ".wasm"),
-    path.join(outputDir, outputName.replace(/\.mjs$/, ".wasm"))
+    path.join(linkDir, `${outputBase}.wasm`),
+    path.join(outputDir, `${outputBase}.wasm`)
   );
 }
 
@@ -139,7 +148,8 @@ if (selectedVariant !== "opfs") {
     linkVariant(memoryObjects, "zsign.mjs", memoryFlags);
   }
   if (selectedVariant === "all" || selectedVariant === "mobile") {
-    linkVariant(memoryObjects, "zsign-mobile.mjs", memoryFlags, 17432576);
+    linkVariant(memoryObjects, "zsign-mobile.mjs", memoryFlags, 17432576, 536870912);
+    linkVariant(memoryObjects, "zsign-mobile.js", memoryFlags, 17432576, 536870912, false);
   }
 }
 

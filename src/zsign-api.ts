@@ -8,13 +8,21 @@ type PendingRun = {
 };
 
 let worker: Worker | null = null;
+let workerMode: "standard" | "mobile-native" | null = null;
 let nextId = 1;
 const pending = new Map<number, PendingRun>();
 
-function getWorker() {
-  if (worker) return worker;
+function getWorker(mode: "standard" | "mobile-native") {
+  if (worker && workerMode === mode) return worker;
+  if (worker) {
+    worker.terminate();
+    worker = null;
+  }
 
-  worker = new Worker(new URL("./zsign-worker.ts", import.meta.url), { type: "module" });
+  workerMode = mode;
+  worker = mode === "mobile-native"
+    ? new Worker(`/mobile-zsign-worker.js?v=wasm_28a6421_mobile_classic_v1`)
+    : new Worker(new URL("./zsign-worker.ts", import.meta.url), { type: "module" });
   worker.addEventListener("message", (event: MessageEvent) => {
     const message = event.data as {
       id: number;
@@ -44,6 +52,7 @@ function getWorker() {
     if (pending.size === 0) {
       worker?.terminate();
       worker = null;
+      workerMode = null;
     }
   });
   worker.addEventListener("error", (event) => {
@@ -53,6 +62,7 @@ function getWorker() {
     pending.clear();
     worker?.terminate();
     worker = null;
+    workerMode = null;
   });
   return worker;
 }
@@ -68,7 +78,7 @@ export function runZsign(
 
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject, onLog, onProgress });
-    getWorker().postMessage(request);
+    getWorker(options.storageMode === "mobile-native" ? "mobile-native" : "standard").postMessage(request);
   });
 }
 

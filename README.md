@@ -228,7 +228,7 @@ The worker API is available in [`src/zsign-api.ts`](src/zsign-api.ts):
 - `signIpa(options, runOptions)` provides the higher-level IPA signing interface.
 - `saveOutput(output)` downloads a returned output file through the browser.
 - `runOptions.storageMode: "mobile-native"` selects the low-copy WORKERFS/native-minizip
-  pipeline used after the mobile compatibility bypass.
+  pipeline in a minimal classic worker used after the mobile compatibility bypass.
 
 `SignIpaOptions` retains the broader zsign option surface even though the main interface
 shows only the common workflow.
@@ -241,6 +241,7 @@ Committed runtime files:
 public/wasm/zsign.mjs
 public/wasm/zsign.wasm
 public/wasm/zsign-mobile.mjs
+public/wasm/zsign-mobile.js
 public/wasm/zsign-mobile.wasm
 public/wasm/zsign-opfs.mjs
 public/wasm/zsign-opfs.wasm
@@ -266,8 +267,11 @@ Pinned inputs:
 The desktop build uses `WORKERFS` for certificate inputs, browser ZIP extraction into
 MEMFS, and `IDBFS` for the persistent zsign cache. The mobile-native build keeps the IPA
 as a WORKERFS-backed browser Blob and delegates extraction and archive creation to upstream
-zsign. It starts with a 16.625 MiB WASM heap and transfers the final MEMFS output buffer
-without an additional read copy. The experimental OPFS build uses WasmFS and Asyncify,
+zsign in a classic worker that does not import the app's zip.js worker bundle. It starts
+with a 16.625 MiB WASM heap, caps growth at 512 MiB, and transfers the final MEMFS output
+buffer without an additional read copy. The mobile UI paints its initial status before
+starting the worker and pauses decorative animation while signing. The experimental OPFS
+build uses WasmFS and Asyncify,
 but automatic selection is disabled until full signing is reliable on that backend.
 Browser-specific patches and upstream details are documented in
 [`docs/UPSTREAM.md`](docs/UPSTREAM.md) and [`docs/WASM_BUILD.md`](docs/WASM_BUILD.md).
@@ -293,8 +297,9 @@ unexpected external requests.
   mode. Mobile completion depends on the IPA's expanded size and the browser's per-tab
   memory allowance.
 - Mobile mode is deliberately slower: it avoids zip.js expansion, reads the IPA through
-  WORKERFS, uses upstream zsign/minizip, selects compression level 1, and transfers the
-  completed MEMFS file buffer directly before terminating the worker.
+  WORKERFS in a minimal classic worker, uses upstream zsign/minizip, selects compression
+  level 1, and transfers the completed MEMFS file buffer directly before terminating the
+  worker. Its WebAssembly heap is capped at 512 MiB to avoid runaway virtual-memory growth.
 - The stable path uses WebAssembly memory; the experimental OPFS runtime is not selected
   automatically.
 - iOS browsers use Apple's WebKit engine even when branded as Chrome, and both iOS and

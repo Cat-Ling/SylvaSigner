@@ -212,6 +212,13 @@
   animation: welcome-mark-float 3.2s ease-in-out infinite;
 }
 
+.mobile-signing *,
+.mobile-signing *::before,
+.mobile-signing *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .upload-progress-indeterminate {
     animation: none;

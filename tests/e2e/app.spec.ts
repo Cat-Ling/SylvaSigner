@@ -393,12 +393,10 @@ test("streams IPA extraction before native zsign archiving", async ({ page }) =>
 
 test("uses the low-copy native zsign pipeline for mobile compatibility", async ({ page }) => {
   await page.goto("/");
-  const workerAsset = readdirSync("dist/assets").find((name) => name.startsWith("zsign-worker-"));
-  expect(workerAsset).toBeTruthy();
   const ipa = await syntheticIpa();
   const result = await page.evaluate(
-    async ({ workerUrl, bytes }) => {
-      const worker = new Worker(workerUrl, { type: "module" });
+    async ({ bytes }) => {
+      const worker = new Worker("/mobile-zsign-worker.js?e2e=1");
       const file = new File([new Uint8Array(bytes)], "Synthetic.ipa", { type: "application/zip" });
       return new Promise<{
         exitCode?: number;
@@ -447,13 +445,13 @@ test("uses the low-copy native zsign pipeline for mobile compatibility", async (
         });
       });
     },
-    { workerUrl: `/assets/${workerAsset}`, bytes: Array.from(ipa) }
+    { bytes: Array.from(ipa) }
   );
 
   expect(result.error).toBeUndefined();
   expect(result.exitCode).toBe(0);
   expect(result.outputKind).toBe("Uint8Array");
-  expect(result.logs.join("\n")).toContain("Mobile mode: native zsign archive pipeline");
+  expect(result.logs.join("\n")).toContain("Mobile mode: classic worker with native zsign archive pipeline");
   expect(result.logs.join("\n")).toContain("Unzip OK!");
   expect(result.logs.join("\n")).toContain("Archive OK!");
   expect(result.progress).toEqual([]);

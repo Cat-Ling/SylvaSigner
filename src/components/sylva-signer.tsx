@@ -1243,7 +1243,7 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   }, [bundleId, cacheCert, cachedCertInfo, certPassword, dylibs, ipa, mobileMode, outputName, p12, profiles])
 
   const handleSign = async () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, behavior: mobileMode ? 'auto' : 'smooth' })
     setState('signing')
     setLogs([])
     setOutputs([])
@@ -1261,14 +1261,17 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
     setConsoleActivity(null)
     setSignProgress({ value: 5, label: 'Starting local signing session' })
 
+    addLog('step', 'Initializing local WebAssembly signing session')
+    addLog('info', `Loaded payload: ${ipa[0]?.name ?? 'pending'}`)
+    if (mobileMode) {
+      addLog('warn', 'Mobile compatibility mode enabled: native archive operations may take longer')
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      })
+    }
+
     try {
       if (cacheCert) await saveCertCacheFromInputs()
-
-      addLog('step', 'Initializing local WebAssembly signing session')
-      addLog('info', `Loaded payload: ${ipa[0]?.name ?? 'pending'}`)
-      if (mobileMode) {
-        addLog('warn', 'Mobile compatibility mode enabled: native archive operations may take longer')
-      }
       const result = await signIpa(buildSignOptions(), {
         onLog: addWorkerLog,
         onProgress: updateWorkerProgress,
@@ -1337,7 +1340,7 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   }
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-6xl flex-col px-5 py-8 md:px-8 md:py-12">
+    <main className={`mx-auto flex min-h-svh w-full max-w-6xl flex-col px-5 py-8 md:px-8 md:py-12 ${mobileMode && state === 'signing' ? 'mobile-signing' : ''}`}>
       <header className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <div className="relative size-12 shrink-0 overflow-hidden rounded-2xl shadow-sm md:size-14">
@@ -1387,7 +1390,7 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
 
       {mobileMode && (
         <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-700 dark:text-amber-300">
-          <AnimateIcon animate loop loopDelay={700}>
+          <AnimateIcon animate={state !== 'signing'} loop={state !== 'signing'} loopDelay={700}>
             <TriangleAlert size={19} className="mt-0.5 shrink-0" />
           </AnimateIcon>
           <div>
@@ -1551,9 +1554,9 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
 
           <div className="flex flex-wrap items-center gap-3">
             <AnimateIcon
-              animate={state === 'signing'}
+              animate={state === 'signing' && !mobileMode}
               animateOnHover
-              loop={state === 'signing'}
+              loop={state === 'signing' && !mobileMode}
               asChild
             >
               <Button
@@ -1564,7 +1567,7 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
                 className="h-11 gap-2 px-5"
               >
                 {state === 'signing' ? (
-                  <LoaderCircle size={18} animate loop />
+                  <LoaderCircle size={18} animate={!mobileMode} loop={!mobileMode} />
                 ) : (
                   <Send size={18} />
                 )}
@@ -1626,7 +1629,7 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
           <div className="h-[420px] max-h-[520px] lg:h-[calc(100vh-12rem)] lg:max-h-[680px]">
             <LogConsole
               logs={logs}
-              active={state === 'signing'}
+              active={state === 'signing' && !mobileMode}
               activity={consoleActivity}
             />
           </div>
