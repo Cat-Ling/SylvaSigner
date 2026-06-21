@@ -1,7 +1,6 @@
 'use client'
 
 import * as React from 'react'
-import { DotLottie } from '@lottiefiles/dotlottie-web'
 import * as QRCode from 'qrcode'
 
 import { Button } from '@/components/ui/button'
@@ -484,33 +483,20 @@ function PreviousIpasDialog({
   )
 }
 
-function WelcomeLottie() {
-  const canvasRef = React.useRef<HTMLCanvasElement>(null)
-
-  React.useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    DotLottie.setWasmUrl('/dotlottie-player.wasm')
-    const player = new DotLottie({
-      canvas,
-      src: '/hello-apple.lottie',
-      autoplay: true,
-      loop: true,
-      renderConfig: {
-        autoResize: true,
-      },
-    })
-
-    return () => player.destroy()
-  }, [])
-
+function WelcomeMark() {
   return (
-    <canvas
-      ref={canvasRef}
-      className="size-full brightness-0 invert"
-      aria-label="Welcome animation"
-    />
+    <div className="welcome-mark relative mx-auto size-44 md:size-52" aria-label="Sylva Signer">
+      <img
+        src="/icon-light.png"
+        alt=""
+        className="size-full object-contain drop-shadow-xl dark:hidden"
+      />
+      <img
+        src="/icon-dark.png"
+        alt=""
+        className="hidden size-full object-contain drop-shadow-xl dark:block"
+      />
+    </div>
   )
 }
 
@@ -523,13 +509,11 @@ function WelcomeDialog({ onClose }: { onClose: () => void }) {
       aria-labelledby="welcome-title"
     >
       <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-        <div className="px-6 pt-3">
-          <div className="mx-auto size-64 md:size-72">
-            <WelcomeLottie />
-          </div>
+        <div className="px-6 pt-5">
+          <WelcomeMark />
         </div>
 
-        <div className="-mt-12 space-y-4 px-6 pb-6 text-center md:-mt-16">
+        <div className="-mt-2 space-y-4 px-6 pb-6 text-center">
           <div>
             <h2 id="welcome-title" className="text-2xl font-semibold tracking-tight">
               Hey there 👋
@@ -554,7 +538,7 @@ function WelcomeDialog({ onClose }: { onClose: () => void }) {
               <GithubIcon size={14} />
               AntonP29
             </a>
-            <span>June 17th, 2026</span>
+            <span>June 21st, 2026</span>
           </div>
 
           <Button type="button" onClick={onClose} className="w-full">
@@ -611,6 +595,14 @@ function LegalFooter() {
           </a>
           <a className="transition-colors hover:text-blue-500" href="#legal">
             Legal
+          </a>
+          <a
+            className="transition-colors hover:text-emerald-500"
+            href="https://github.com/AntonP29/Sylva26/blob/master/LICENSE"
+            target="_blank"
+            rel="noreferrer"
+          >
+            MIT License
           </a>
           <a
             className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
@@ -825,6 +817,13 @@ function InfoPage({ route }: { route: Exclude<Route, 'app'> }) {
               <p>
                 This project is made by AntonP29 and published for local, privacy-preserving
                 IPA signing research and utility.
+              </p>
+              <p>
+                Sylva Signer&apos;s original code is available under the MIT License. zsign,
+                OpenSSL, Inter, JavaScript packages, and other third-party components remain
+                under their own licenses and notices documented in the repository. Sylva
+                Signer is independent and is not affiliated with or endorsed by Apple,
+                Litterbox, Catbox, Palera, or the upstream zsign maintainers.
               </p>
             </>
           )}

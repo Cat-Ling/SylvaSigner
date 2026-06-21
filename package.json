@@ -1,7 +1,14 @@
 {
   "name": "zsign-wasm",
   "version": "0.1.0",
+  "description": "Fully local IPA signing in a desktop browser with zsign WebAssembly.",
   "private": true,
+  "license": "MIT",
+  "author": "AntonP29",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AntonP29/Sylva26.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,11 +18,11 @@
     "build:openssl": "node scripts/build-openssl-wasm.mjs",
     "build:wasm": "node scripts/build-wasm.mjs",
     "wasm:smoke": "node scripts/smoke-wasm.mjs",
+    "licenses:check": "node scripts/check-licenses.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
-    "@lottiefiles/dotlottie-web": "^0.74.0",
     "@plist/binary.parse": "^1.1.0",
     "@zip.js/zip.js": "^2.8.26",
     "class-variance-authority": "^0.7.1",

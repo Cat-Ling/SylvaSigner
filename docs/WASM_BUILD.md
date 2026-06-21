@@ -1,5 +1,10 @@
 # WASM Build
 
+The generated runtime combines MIT-licensed zsign, zlib/minizip components,
+and Apache-2.0-licensed OpenSSL. Keep `vendor/zsign/LICENSE`,
+`licenses/openssl-3.5.7.txt`, and `THIRD_PARTY_NOTICES.md` with public source
+and binary distributions.
+
 The browser build uses Emscripten `6.0.0` and OpenSSL `3.5.7` LTS.
 
 ```powershell

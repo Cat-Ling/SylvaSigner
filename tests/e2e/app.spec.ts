@@ -1,5 +1,6 @@
 import { devices, expect, test } from "@playwright/test";
 import { readFileSync, readdirSync } from "node:fs";
+import { deflateRawSync } from "node:zlib";
 import forge from "node-forge";
 import {
   TextReader,
@@ -8,6 +9,43 @@ import {
   ZipReader,
   ZipWriter
 } from "@zip.js/zip.js";
+
+function crc32(bytes: Uint8Array) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: string, data = new Uint8Array()) {
+  const typeBytes = Buffer.from(type, "ascii");
+  const body = Buffer.concat([typeBytes, Buffer.from(data)]);
+  const chunk = Buffer.alloc(data.length + 12);
+  chunk.writeUInt32BE(data.length, 0);
+  body.copy(chunk, 4);
+  chunk.writeUInt32BE(crc32(body), data.length + 8);
+  return chunk;
+}
+
+function syntheticCgbiIcon() {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(1, 0);
+  ihdr.writeUInt32BE(1, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const bgraPixel = Buffer.from([0, 20, 90, 200, 255]);
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk("CgBI"),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateRawSync(bgraPixel)),
+    pngChunk("IEND")
+  ]);
+}
 
 async function syntheticIpa() {
   const writer = new Uint8ArrayWriter();
@@ -26,12 +64,7 @@ async function syntheticIpa() {
   await zip.add("Payload/SylvaTest.app/Info.plist", new TextReader(plist));
   await zip.add(
     "Payload/SylvaTest.app/AppIcon60x60@2x.png",
-    new Uint8ArrayReader(
-      Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-        "base64"
-      )
-    )
+    new Uint8ArrayReader(syntheticCgbiIcon())
   );
   await zip.add(
     "Payload/SylvaTest.app/SylvaTest",
@@ -72,7 +105,7 @@ test("loads the exact Sylva signing work surface without external network reques
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Hey there 👋" })).toBeVisible();
-  await expect(page.getByText("June 17th, 2026")).toBeVisible();
+  await expect(page.getByText("June 21st, 2026")).toBeVisible();
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: "Sylva Signer" })).toBeVisible();
   await expect(page.getByText("Fully local IPA signing in your browser")).toBeVisible();
@@ -112,7 +145,9 @@ test("extracts app metadata and fills the bundle ID when an IPA is selected", as
   await expect(page.getByRole("heading", { name: "Sylva Test" })).toBeVisible();
   await expect(page.getByText("dev.sylva.test", { exact: true })).toBeVisible();
   await expect(page.locator("#bundle-id")).toHaveValue("dev.sylva.test");
-  await expect(page.getByAltText("Sylva Test icon")).toBeVisible();
+  const icon = page.getByAltText("Sylva Test icon");
+  await expect(icon).toBeVisible();
+  await expect.poll(() => icon.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByText("1.0", { exact: true })).toBeVisible();
 });
 

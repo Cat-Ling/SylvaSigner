@@ -18,7 +18,7 @@ to [Litterbox](https://litterbox.catbox.moe/) and generate an iOS installation m
 through Palera. This action is separate from local signing and requires explicit user
 confirmation.
 
-Made by [AntonP29](https://github.com/AntonP29). Project status: June 17, 2026.
+Made by [AntonP29](https://github.com/AntonP29). Project status: June 21, 2026.
 
 ## Features
 
@@ -37,6 +37,8 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 17, 2026.
   ID controls.
 - Automatic app name, bundle ID, version, artwork, and IPA-size extraction when an IPA
   is selected; the detected bundle ID is loaded into the editable bundle-ID field.
+- Browser decoding for standard and Apple-optimized `CgBI` app icon PNGs, including
+  channel correction and alpha unpremultiplication before thumbnail generation.
 - Local P12 certificate common-name/expiration parsing and provisioning-profile
   name/expiration details in the app summary tile.
 - Output names default to the input name with `_signed` appended.
@@ -49,8 +51,8 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 17, 2026.
 - Local download of the signed IPA.
 - Optional QR/direct iPhone install flow using Litterbox and Palera.
 - Temporary hosting choices of `1h`, `12h`, `24h`, or `72h`.
-- Responsive light/dark interface, animated controls, matching favicons, and a bundled
-  local welcome animation.
+- Responsive light/dark interface, animated controls, matching favicons, an animated
+  Sylva welcome mark, and locally bundled Inter variable fonts.
 - Privacy Policy and Legal pages in the footer.
 
 The public UI intentionally focuses on the common signing workflow. Lower-level zsign
@@ -269,9 +271,10 @@ npm run wasm:smoke
 npm run test:e2e
 ```
 
-The Playwright suite verifies the Sylva work surface, welcome notice, local asset loading,
-output naming, footer pages, and Previous IPAs panel without external requests during
-normal page load.
+The Playwright suite verifies the Sylva work surface, welcome notice, standard and CgBI
+app metadata/artwork extraction, bundle-ID autofill, local P12/profile details, output
+naming, footer pages, active QR history, and the zsign archive path. Normal page load is
+also checked for unexpected external requests.
 
 ## Browser and Platform Limits
 
@@ -307,16 +310,68 @@ normal page load.
 src/                       React UI, worker, zsign API, history, and install helpers
 src/components/            Sylva components, UI primitives, and animated icons
 public/wasm/               Committed zsign WASM runtime
-public/fonts/              Bundled SF Pro Display font files
+public/fonts/inter/        Inter variable fonts and the SIL OFL 1.1 license
 public/*.png               App icons and favicons
-public/*.lottie            Bundled welcome animation
-public/dotlottie-player.wasm  Local DotLottie runtime; no CDN is required
 scripts/                   Emscripten, OpenSSL, zsign build, and smoke-test scripts
 vendor/zsign/              Vendored upstream zsign source and MIT license
+licenses/                  Exact OpenSSL and direct runtime package license texts
 docs/                      Upstream and WASM build documentation
 tests/e2e/                 Playwright browser tests
 tests/fixtures/            Synthetic test fixtures only
 ```
+
+## License
+
+Sylva Signer's original code and project branding are released under the
+[MIT License](LICENSE), copyright 2026 AntonP29. MIT was selected because it is a short,
+permissive license compatible with the upstream zsign license. It permits use,
+modification, redistribution, sublicensing, and commercial use, provided the copyright
+and license notice are retained. It includes no warranty.
+
+Third-party components are **not relicensed** as Sylva code. Their original terms remain
+in force. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), `licenses/`,
+`vendor/zsign/LICENSE`, and `public/fonts/inter/OFL.txt`.
+
+The publication and secret-review steps are documented in
+[`docs/PUBLIC_RELEASE.md`](docs/PUBLIC_RELEASE.md).
+
+This licensing inventory is a practical compliance record, not legal advice. Before a
+public release, confirm that the Sylva logo files are artwork you created or have the
+right to distribute, and review the current terms of optional external services.
+
+## Direct Dependencies
+
+All direct packages are listed here for transparency. `package-lock.json` records exact
+versions and transitive packages. Exact direct runtime license texts are preserved under
+`licenses/npm/`.
+
+| Runtime package | Purpose | License |
+| --- | --- | --- |
+| `@base-ui/react` | Accessible UI primitives | MIT |
+| `@plist/binary.parse` | Binary Apple plist parsing | BSD-3-Clause-Clear |
+| `@zip.js/zip.js` | Browser ZIP entry reading and extraction | BSD-3-Clause |
+| `class-variance-authority` | Component variant composition | Apache-2.0 |
+| `clsx` | Conditional class names | MIT |
+| `lucide-react` | Interface icon primitives used by the animated icon set | ISC; selected Feather-derived icons also retain MIT notices |
+| `motion` | Interface animation runtime | MIT |
+| `node-forge` | Local PKCS#12 certificate metadata parsing | BSD-3-Clause option selected |
+| `qrcode` | Local install QR generation | MIT |
+| `react`, `react-dom` | User-interface runtime | MIT |
+| `shadcn` | UI styling/tooling support | MIT |
+| `tailwindcss`, `tailwind-merge`, `tw-animate-css` | Styling and animation utilities | MIT |
+
+| Development package | Purpose | License |
+| --- | --- | --- |
+| `@playwright/test` | Chromium acceptance tests | Apache-2.0 |
+| `@tailwindcss/vite` | Tailwind Vite integration | MIT |
+| `@types/node`, `@types/node-forge`, `@types/qrcode`, `@types/react`, `@types/react-dom` | TypeScript declarations | MIT |
+| `@vitejs/plugin-react` | React build integration | MIT |
+| `typescript` | Type checking | Apache-2.0 |
+| `vite` | Development server and production bundler | MIT |
+
+Inter is licensed separately under SIL OFL 1.1. The native/WASM signing stack additionally
+uses zsign (MIT), zlib/minizip (zlib terms), OpenSSL 3.5.7 (Apache-2.0), and Emscripten
+6.0.0 (MIT and University of Illinois/NCSA terms).
 
 ## Attribution
 
