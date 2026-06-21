@@ -24,6 +24,9 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 21, 2026.
 
 - Local IPA signing with zsign compiled to WebAssembly.
 - Dedicated browser worker so signing does not block the interface.
+- Opt-in iOS/Android compatibility mode using Blob-backed WORKERFS input, a smaller
+  initial WASM heap, upstream native minizip, low compression, and direct output-buffer
+  transfer to reduce duplicate memory.
 - Streaming ZIP extraction with bounded parallel decompression and native browser
   decompression streams when available, followed by zsign-native IPA archiving.
 - Exact-size MEMFS allocation to reduce transient extraction memory spikes.
@@ -171,7 +174,8 @@ uploaded to Litterbox.
 Requirements:
 
 - Node.js with npm
-- Current desktop Chromium-based browser
+- Current desktop Chromium-based browser recommended
+- Current iOS/Android browser for experimental mobile compatibility mode
 
 ```powershell
 npm install
@@ -223,6 +227,8 @@ The worker API is available in [`src/zsign-api.ts`](src/zsign-api.ts):
   returns logs, exit code, and collected output files.
 - `signIpa(options, runOptions)` provides the higher-level IPA signing interface.
 - `saveOutput(output)` downloads a returned output file through the browser.
+- `runOptions.storageMode: "mobile-native"` selects the low-copy WORKERFS/native-minizip
+  pipeline used after the mobile compatibility bypass.
 
 `SignIpaOptions` retains the broader zsign option surface even though the main interface
 shows only the common workflow.
@@ -234,6 +240,8 @@ Committed runtime files:
 ```text
 public/wasm/zsign.mjs
 public/wasm/zsign.wasm
+public/wasm/zsign-mobile.mjs
+public/wasm/zsign-mobile.wasm
 public/wasm/zsign-opfs.mjs
 public/wasm/zsign-opfs.wasm
 ```
@@ -255,11 +263,12 @@ Pinned inputs:
 - OpenSSL `3.5.7`
 - zsign commit `28a6421`
 
-The standard build uses `WORKERFS` for certificate inputs, MEMFS for synchronous signing,
-and `IDBFS` for the persistent zsign cache. ZIP input is streamed into MEMFS by the browser,
-while signed IPA output is created by zsign's native minizip path. An experimental build
-uses WasmFS with OPFS and Asyncify, but automatic selection is disabled until full signing
-is reliable on that backend.
+The desktop build uses `WORKERFS` for certificate inputs, browser ZIP extraction into
+MEMFS, and `IDBFS` for the persistent zsign cache. The mobile-native build keeps the IPA
+as a WORKERFS-backed browser Blob and delegates extraction and archive creation to upstream
+zsign. It starts with a 16.625 MiB WASM heap and transfers the final MEMFS output buffer
+without an additional read copy. The experimental OPFS build uses WasmFS and Asyncify,
+but automatic selection is disabled until full signing is reliable on that backend.
 Browser-specific patches and upstream details are documented in
 [`docs/UPSTREAM.md`](docs/UPSTREAM.md) and [`docs/WASM_BUILD.md`](docs/WASM_BUILD.md).
 
@@ -273,18 +282,23 @@ npm run test:e2e
 
 The Playwright suite verifies the Sylva work surface, welcome notice, standard and CgBI
 app metadata/artwork extraction, bundle-ID autofill, local P12/profile details, output
-naming, footer pages, active QR history, and the zsign archive path. Normal page load is
-also checked for unexpected external requests.
+naming, footer pages, active QR history, the desktop archive path, mobile bypass, and a
+complete mobile-native sign/archive round trip. Normal page load is also checked for
+unexpected external requests.
 
 ## Browser and Platform Limits
 
-- Current desktop Chromium is the supported browser target.
-- iOS and Android visitors receive a desktop-required notice because mobile browser
-  memory and WebAssembly filesystem limits do not yet permit reliable IPA signing.
+- Current desktop Chromium is the primary and most reliable browser target.
+- iOS and Android visitors receive a warning before they can opt into mobile compatibility
+  mode. Mobile completion depends on the IPA's expanded size and the browser's per-tab
+  memory allowance.
+- Mobile mode is deliberately slower: it avoids zip.js expansion, reads the IPA through
+  WORKERFS, uses upstream zsign/minizip, selects compression level 1, and transfers the
+  completed MEMFS file buffer directly before terminating the worker.
 - The stable path uses WebAssembly memory; the experimental OPFS runtime is not selected
   automatically.
 - iOS browsers use Apple's WebKit engine even when branded as Chrome, and both iOS and
-  Android browsers can terminate memory-intensive signing workers without recovery.
+  Android browsers can still terminate memory-intensive signing workers without recovery.
 - Large IPA performance depends on device CPU, memory, storage, and browser limits.
 - Extraction progress is byte-based; native zsign archive activity is indeterminate.
 - Litterbox upload progress is indeterminate for CORS compatibility.
@@ -300,7 +314,7 @@ also checked for unexpected external requests.
 - Only synthetic fixtures should be placed in `tests/fixtures/`.
 - Browser storage persists until cleared by the app, browser settings, or profile reset.
 - A private source repository does not make hosted client assets secret. Visitors can
-  download the JavaScript, `zsign.mjs`, and `zsign.wasm` required by their browser.
+  download the JavaScript and zsign WASM runtimes required by their browser.
 - Minification or WASM obfuscation cannot prevent a visitor from saving client assets.
 - Use only certificates, profiles, dylibs, and applications you are authorized to use.
 

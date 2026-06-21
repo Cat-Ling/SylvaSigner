@@ -34,7 +34,7 @@ type IterableDirectoryHandle = FileSystemDirectoryHandle & {
 
 const ctx = self as DedicatedWorkerGlobalScope;
 const importModule = new Function("url", "return import(url)") as (url: string) => Promise<ZsignImport>;
-const wasmCacheBust = "wasm_28a6421_streaming_zip_v2";
+const wasmCacheBust = "wasm_28a6421_mobile_native_v1";
 const opfsProjectDir = "sylva-zsign";
 
 type BrowserZipPlan = {
@@ -145,7 +145,7 @@ function syncfs(FS: any, populate: boolean) {
 }
 
 async function loadModule(
-  variant: "zsign" | "zsign-opfs",
+  variant: "zsign" | "zsign-mobile" | "zsign-opfs",
   logs: string[],
   emitLog: (line: string) => void
 ) {
@@ -190,8 +190,17 @@ async function mountFiles(module: ZsignModule, files: VirtualInputFile[]) {
   }
 }
 
-function readFileOutput(FS: any, filePath: string): OutputFile | null {
+function readFileOutput(FS: any, filePath: string, transferOwnership = false): OutputFile | null {
   try {
+    if (transferOwnership) {
+      const node = FS.analyzePath(filePath).object;
+      const contents = node?.contents;
+      if (contents instanceof Uint8Array) {
+        const usedBytes = Math.min(node.usedBytes ?? contents.byteLength, contents.byteLength);
+        const data = contents.subarray(0, usedBytes) as Uint8Array<ArrayBuffer>;
+        return { path: filePath, name: basename(filePath), type: outputType(filePath), data };
+      }
+    }
     const data = FS.readFile(filePath) as Uint8Array;
     const outputBuffer =
       data.byteOffset === 0 && data.byteLength === data.buffer.byteLength
@@ -217,6 +226,7 @@ function collectMemoryDirectory(FS: any, dir: string, outputs: OutputFile[]) {
     const stat = FS.stat(filePath);
     if (FS.isDir(stat.mode)) collectMemoryDirectory(FS, filePath, outputs);
     else if (FS.isFile(stat.mode)) {
+      if (outputs.some((output) => output.path === filePath)) continue;
       const output = readFileOutput(FS, filePath);
       if (output) outputs.push(output);
     }
@@ -257,13 +267,20 @@ async function executeMemory(
   logs: string[],
   emitLog: (line: string) => void
 ): Promise<RunZsignResult> {
-  const module = await loadModule("zsign", logs, emitLog);
+  const mobileNative = request.options.storageMode === "mobile-native";
+  const module = await loadModule(mobileNative ? "zsign-mobile" : "zsign", logs, emitLog);
   const FS = module.FS;
-  const zipPlan = browserZipPlan(request);
+  const zipPlan = mobileNative ? null : browserZipPlan(request);
   ensureDir(FS, "/work");
   ensureDir(FS, "/output");
   ensureDir(FS, "/tmp");
   FS.chdir("/work");
+
+  if (mobileNative) {
+    const line = ">>> Mobile mode: native zsign archive pipeline with WORKERFS input";
+    logs.push(line);
+    emitLog(line);
+  }
 
   if (request.options.persistCache !== false) {
     ensureDir(FS, "/work/.zsign_cache");
@@ -299,7 +316,7 @@ async function executeMemory(
 
   const outputs: OutputFile[] = [];
   for (const filePath of request.options.outputPaths ?? []) {
-    const output = readFileOutput(FS, normalizePath(filePath));
+    const output = readFileOutput(FS, normalizePath(filePath), mobileNative);
     if (output) outputs.push(output);
   }
   collectMemoryDirectory(FS, "/output", outputs);
@@ -374,7 +391,7 @@ async function collectOpfsDirectory(
 }
 
 function useOpfs(request: WorkerRequest) {
-  if (request.options.storageMode === "memory") return false;
+  if (request.options.storageMode === "memory" || request.options.storageMode === "mobile-native") return false;
   const storage = navigator.storage as StorageManagerWithDirectory;
   if (typeof storage?.getDirectory !== "function") return false;
   if (request.options.storageMode === "opfs") return true;
@@ -503,9 +520,13 @@ ctx.addEventListener("message", async (event: MessageEvent<WorkerRequest>) => {
   if (request.type !== "run") return;
   try {
     const result = await execute(request);
-    const transfers = result.outputs
-      .map((output) => output.data)
-      .filter((data): data is ArrayBuffer => data instanceof ArrayBuffer);
+    const transfers = [...new Set(result.outputs.flatMap((output) => {
+      if (output.data instanceof ArrayBuffer) return [output.data];
+      if (output.data instanceof Uint8Array && output.data.buffer instanceof ArrayBuffer) {
+        return [output.data.buffer];
+      }
+      return [];
+    }))];
     ctx.postMessage({ id: request.id, type: "done", ok: true, result }, transfers);
   } catch (error) {
     ctx.postMessage({

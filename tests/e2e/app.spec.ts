@@ -240,17 +240,23 @@ test.describe("mobile availability", () => {
     userAgent: iphone.userAgent
   });
 
-  test("shows the desktop requirement and signing workflow", async ({ page }) => {
+  test("offers an explicit mobile compatibility bypass", async ({ page }) => {
     await page.goto("/");
 
-    await expect(page.getByRole("heading", { name: "Desktop access required" })).toBeVisible();
-    await expect(page.getByText("Sylva Signer is currently available only on desktop devices.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Desktop recommended" })).toBeVisible();
+    await expect(page.getByText("Mobile signing is experimental")).toBeVisible();
     await expect(page.getByText("Select signing files")).toBeVisible();
     await expect(page.getByText("Sign locally in the browser")).toBeVisible();
     await expect(page.getByText("Optional iPhone installation")).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign IPA" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Privacy Policy" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Legal" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Continue on this device" }).click();
+    await expect(page.getByRole("heading", { name: "Hey there 👋" })).toBeVisible();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByText("Mobile compatibility mode", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign IPA" })).toBeDisabled();
   });
 });
 
@@ -383,4 +389,78 @@ test("streams IPA extraction before native zsign archiving", async ({ page }) =>
   const firstHeader = new DataView(new Uint8Array(result.outputBytes!).buffer);
   expect(firstHeader.getUint32(0, true)).toBe(0x04034b50);
   expect(firstHeader.getUint16(6, true) & 0x808).toBe(0);
+});
+
+test("uses the low-copy native zsign pipeline for mobile compatibility", async ({ page }) => {
+  await page.goto("/");
+  const workerAsset = readdirSync("dist/assets").find((name) => name.startsWith("zsign-worker-"));
+  expect(workerAsset).toBeTruthy();
+  const ipa = await syntheticIpa();
+  const result = await page.evaluate(
+    async ({ workerUrl, bytes }) => {
+      const worker = new Worker(workerUrl, { type: "module" });
+      const file = new File([new Uint8Array(bytes)], "Synthetic.ipa", { type: "application/zip" });
+      return new Promise<{
+        exitCode?: number;
+        logs: string[];
+        outputBytes?: number[];
+        outputKind?: string;
+        progress: string[];
+        error?: string;
+      }>((resolve) => {
+        const logs: string[] = [];
+        const progress: string[] = [];
+        worker.onmessage = async (event) => {
+          const message = event.data;
+          if (message.type === "log") logs.push(message.line);
+          if (message.type === "progress") progress.push(message.progress.phase);
+          if (message.type !== "done") return;
+          worker.terminate();
+          const output = message.result?.outputs?.[0];
+          const data = output?.data;
+          const outputBytes = data instanceof Blob
+            ? Array.from(new Uint8Array(await data.arrayBuffer()))
+            : data instanceof ArrayBuffer
+              ? Array.from(new Uint8Array(data))
+              : data instanceof Uint8Array
+                ? Array.from(data)
+                : undefined;
+          resolve({
+            exitCode: message.result?.exitCode,
+            logs,
+            outputBytes,
+            outputKind: data?.constructor?.name,
+            progress,
+            error: message.error
+          });
+        };
+        worker.postMessage({
+          id: 2,
+          type: "run",
+          args: ["-a", "-z", "1", "-o", "/output/Synthetic_mobile_signed.ipa", "/blob/input.ipa"],
+          files: [{ path: "/blob/input.ipa", file, mode: "workerfs" }],
+          options: {
+            outputPaths: ["/output/Synthetic_mobile_signed.ipa"],
+            persistCache: false,
+            storageMode: "mobile-native"
+          }
+        });
+      });
+    },
+    { workerUrl: `/assets/${workerAsset}`, bytes: Array.from(ipa) }
+  );
+
+  expect(result.error).toBeUndefined();
+  expect(result.exitCode).toBe(0);
+  expect(result.outputKind).toBe("Uint8Array");
+  expect(result.logs.join("\n")).toContain("Mobile mode: native zsign archive pipeline");
+  expect(result.logs.join("\n")).toContain("Unzip OK!");
+  expect(result.logs.join("\n")).toContain("Archive OK!");
+  expect(result.progress).toEqual([]);
+
+  const archive = new ZipReader(new Uint8ArrayReader(new Uint8Array(result.outputBytes!)));
+  const entries = await archive.getEntries();
+  await archive.close();
+  expect(entries.some((entry) => entry.filename === "Payload/")).toBe(true);
+  expect(entries.some((entry) => entry.filename.endsWith("Info.plist"))).toBe(true);
 });

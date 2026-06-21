@@ -35,6 +35,7 @@ import { Upload } from '@/components/animate-ui/icons/upload'
 import { Copy } from '@/components/animate-ui/icons/copy'
 import { Lock } from '@/components/animate-ui/icons/lock'
 import { ClipboardList } from '@/components/animate-ui/icons/clipboard-list'
+import { TriangleAlert } from '@/components/animate-ui/icons/triangle-alert'
 import type { InstallMetadata } from '@/install-api'
 import {
   extractAppMetadata,
@@ -627,19 +628,19 @@ function isMobileBrowser() {
   )
 }
 
-function MobileUnavailablePage() {
+function MobileUnavailablePage({ onContinue }: { onContinue: () => void }) {
   const steps = [
     {
       icon: Upload,
       title: 'Select signing files',
       description:
-        'Choose the IPA, P12 or PFX certificate, provisioning profile, and certificate password on your desktop.',
+        'Choose the IPA, P12 or PFX certificate, provisioning profile, and certificate password from this device.',
     },
     {
       icon: Blocks,
       title: 'Sign locally in the browser',
       description:
-        'A dedicated browser worker runs zsign as WebAssembly. Your signing credentials and source IPA remain on the desktop device.',
+        'A dedicated browser worker runs zsign as WebAssembly. Your signing credentials and source IPA remain on this device.',
     },
     {
       icon: Download,
@@ -651,7 +652,7 @@ function MobileUnavailablePage() {
       icon: Send,
       title: 'Optional iPhone installation',
       description:
-        'With your approval, upload only the signed IPA to a temporary HTTPS provider, then scan the generated QR code with your iPhone.',
+        'With your approval, upload only the signed IPA to a temporary HTTPS provider, then open the generated installation link.',
     },
   ]
 
@@ -689,12 +690,12 @@ function MobileUnavailablePage() {
             />
           </AnimateIcon>
           <h2 className="mt-4 text-2xl font-semibold tracking-tight">
-            Desktop access required
+            Desktop recommended
           </h2>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            Sylva Signer is currently available only on desktop devices. Mobile browser
-            frameworks do not yet provide the memory and WebAssembly filesystem behavior
-            required for reliable IPA signing.
+            Mobile signing is experimental because browser memory limits can terminate
+            large jobs without warning. A lower-memory compatibility pipeline is available,
+            but desktop Chromium remains the most reliable option.
           </p>
         </div>
 
@@ -719,6 +720,18 @@ function MobileUnavailablePage() {
               </li>
             ))}
           </ol>
+          <div className="mt-4 border-t border-border pt-5">
+            <p className="mb-3 text-xs leading-5 text-muted-foreground">
+              Continue only if you can keep this tab open throughout signing. Smaller IPAs
+              are more likely to complete successfully on mobile devices.
+            </p>
+            <AnimateIcon animateOnHover asChild>
+              <Button type="button" onClick={onContinue} className="w-full gap-2">
+                <TriangleAlert size={16} />
+                Continue on this device
+              </Button>
+            </AnimateIcon>
+          </div>
         </div>
       </section>
 
@@ -978,7 +991,7 @@ function AppDetailsTile({
   )
 }
 
-function SignerApp() {
+function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   const [ipa, setIpa] = React.useState<File[]>([])
   const [p12, setP12] = React.useState<File[]>([])
   const [profiles, setProfiles] = React.useState<File[]>([])
@@ -1224,10 +1237,10 @@ function SignerApp() {
       password: certPassword || (cacheCert ? cachedCertInfo?.password ?? '' : ''),
       outputName: outputName.trim() || defaultOutputName(ipa[0]),
       bundleId: bundleId.trim(),
-      zipLevel: 6,
+      zipLevel: mobileMode ? 1 : 6,
       metadata: false,
     }
-  }, [bundleId, cacheCert, cachedCertInfo, certPassword, dylibs, ipa, outputName, p12, profiles])
+  }, [bundleId, cacheCert, cachedCertInfo, certPassword, dylibs, ipa, mobileMode, outputName, p12, profiles])
 
   const handleSign = async () => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -1253,9 +1266,13 @@ function SignerApp() {
 
       addLog('step', 'Initializing local WebAssembly signing session')
       addLog('info', `Loaded payload: ${ipa[0]?.name ?? 'pending'}`)
+      if (mobileMode) {
+        addLog('warn', 'Mobile compatibility mode enabled: native archive operations may take longer')
+      }
       const result = await signIpa(buildSignOptions(), {
         onLog: addWorkerLog,
         onProgress: updateWorkerProgress,
+        storageMode: mobileMode ? 'mobile-native' : 'memory',
       })
 
       setOutputs(result.outputs)
@@ -1367,6 +1384,21 @@ function SignerApp() {
       </header>
 
       <Separator className="my-8" />
+
+      {mobileMode && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-700 dark:text-amber-300">
+          <AnimateIcon animate loop loopDelay={700}>
+            <TriangleAlert size={19} className="mt-0.5 shrink-0" />
+          </AnimateIcon>
+          <div>
+            <p className="text-sm font-medium">Mobile compatibility mode</p>
+            <p className="mt-1 text-xs leading-5 opacity-80">
+              Uses upstream zsign&apos;s slower native archive path to reduce browser memory
+              duplication. Keep this tab active until signing and download finish.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-6">
@@ -1674,14 +1706,16 @@ function SignerApp() {
 
 export function SylvaSigner() {
   const route = useRoute()
+  const mobile = isMobileBrowser()
+  const [mobileBypass, setMobileBypass] = React.useState(false)
 
   if (route === 'privacy' || route === 'legal') {
     return <InfoPage route={route} />
   }
 
-  if (isMobileBrowser()) {
-    return <MobileUnavailablePage />
+  if (mobile && !mobileBypass) {
+    return <MobileUnavailablePage onContinue={() => setMobileBypass(true)} />
   }
 
-  return <SignerApp />
+  return <SignerApp mobileMode={mobile} />
 }

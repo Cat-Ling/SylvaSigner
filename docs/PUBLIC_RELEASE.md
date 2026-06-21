@@ -40,8 +40,8 @@ License, with third-party components remaining under the licenses documented in
 
 ## Repository presentation
 
-- Suggested description: `Fully local IPA signing in desktop Chromium using a
-  WebAssembly port of zsign.`
+- Suggested description: `Fully local IPA signing in the browser using a WebAssembly
+  port of zsign.`
 - Suggested topics: `webassembly`, `emscripten`, `ios`, `ipa`, `codesigning`,
   `react`, `typescript`, `privacy`.
 - Link the deployed static demonstration only from a domain you control and

@@ -1,7 +1,7 @@
 {
   "name": "zsign-wasm",
   "version": "0.1.0",
-  "description": "Fully local IPA signing in a desktop browser with zsign WebAssembly.",
+  "description": "Fully local IPA signing in the browser with zsign WebAssembly.",
   "private": true,
   "license": "MIT",
   "author": "AntonP29",

@@ -10,7 +10,7 @@ export interface OutputFile {
   path: string;
   name: string;
   type: string;
-  data: ArrayBuffer | Blob;
+  data: ArrayBuffer | Blob | Uint8Array<ArrayBuffer>;
 }
 
 export interface ZsignProgress {
@@ -23,7 +23,7 @@ export interface RunZsignOptions {
   outputPaths?: string[];
   collectDirectories?: string[];
   persistCache?: boolean;
-  storageMode?: "auto" | "memory" | "opfs";
+  storageMode?: "auto" | "memory" | "mobile-native" | "opfs";
   onLog?: (line: string) => void;
   onProgress?: (progress: ZsignProgress) => void;
 }

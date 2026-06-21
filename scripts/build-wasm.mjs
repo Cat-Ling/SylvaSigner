@@ -14,8 +14,8 @@ const objDir = path.join(buildDir, "wasm");
 const selectedVariant = process.env.ZSIGN_WASM_VARIANT ?? "all";
 const debugBuild = process.env.ZSIGN_WASM_DEBUG === "1";
 
-if (!["all", "memory", "opfs"].includes(selectedVariant)) {
-  throw new Error("ZSIGN_WASM_VARIANT must be all, memory, or opfs.");
+if (!["all", "memory", "mobile", "opfs"].includes(selectedVariant)) {
+  throw new Error("ZSIGN_WASM_VARIANT must be all, memory, mobile, or opfs.");
 }
 
 if (!existsSync(opensslLib)) {
@@ -96,7 +96,7 @@ const providerLibs = ["libdefault.a", "liblegacy.a"]
   .map((name) => path.join(libDir, name))
   .filter(existsSync);
 
-function linkVariant(objects, outputName, extraFlags) {
+function linkVariant(objects, outputName, extraFlags, initialMemory = 33554432) {
   const linkDir = path.join(objDir, "linked", path.basename(outputName, ".mjs"));
   rmSync(linkDir, { recursive: true, force: true });
   mkdirSync(linkDir, { recursive: true });
@@ -116,7 +116,7 @@ function linkVariant(objects, outputName, extraFlags) {
     "-sINVOKE_RUN=0",
     "-sEXIT_RUNTIME=0",
     "-sALLOW_MEMORY_GROWTH=1",
-    "-sINITIAL_MEMORY=33554432",
+    `-sINITIAL_MEMORY=${initialMemory}`,
     "-sFORCE_FILESYSTEM=1",
     ...(debugBuild ? ["-sASSERTIONS=2", "--profiling-funcs"] : []),
     ...extraFlags
@@ -130,14 +130,20 @@ function linkVariant(objects, outputName, extraFlags) {
 
 if (selectedVariant !== "opfs") {
   const memoryObjects = compileCppVariant("memory");
-  linkVariant(memoryObjects, "zsign.mjs", [
+  const memoryFlags = [
     "-sEXPORTED_RUNTIME_METHODS=['callMain','FS','WORKERFS','IDBFS']",
     "-lidbfs.js",
     "-lworkerfs.js"
-  ]);
+  ];
+  if (selectedVariant === "all" || selectedVariant === "memory") {
+    linkVariant(memoryObjects, "zsign.mjs", memoryFlags);
+  }
+  if (selectedVariant === "all" || selectedVariant === "mobile") {
+    linkVariant(memoryObjects, "zsign-mobile.mjs", memoryFlags, 17432576);
+  }
 }
 
-if (selectedVariant !== "memory") {
+if (selectedVariant === "all" || selectedVariant === "opfs") {
   const opfsObjects = compileCppVariant("opfs", ["-DZSIGN_WASM_OPFS=1"]);
   linkVariant(opfsObjects, "zsign-opfs.mjs", [
     "-sWASMFS=1",
@@ -148,4 +154,4 @@ if (selectedVariant !== "memory") {
   ]);
 }
 
-console.log("WASM builds complete: public/wasm/zsign.mjs and public/wasm/zsign-opfs.mjs");
+console.log("WASM builds complete: desktop, mobile-native, and OPFS variants are in public/wasm");
