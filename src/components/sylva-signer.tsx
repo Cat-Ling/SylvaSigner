@@ -589,7 +589,6 @@ function LegalFooter() {
             >
               zsign
             </a>
-            <span>(Private WASM port)</span>
           </span>
           <span className="inline-flex items-center gap-1 whitespace-nowrap">
             <span className="mr-2 font-semibold text-foreground/60" aria-hidden="true">
@@ -936,7 +935,13 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   const [consoleActivity, setConsoleActivity] = React.useState<ConsoleActivity | null>(null)
   const [historyEntries, setHistoryEntries] = React.useState<IpaHistoryEntry[]>([])
   const [historyDialogOpen, setHistoryDialogOpen] = React.useState(false)
-  const [welcomeOpen, setWelcomeOpen] = React.useState(true)
+  const [welcomeOpen, setWelcomeOpen] = React.useState(() => {
+    try {
+      return !Boolean(window.localStorage.getItem('sylva_welcome_shown'))
+    } catch {
+      return false
+    }
+  })
   const [currentHistoryId, setCurrentHistoryId] = React.useState('')
   const installMetadataRef = React.useRef<Partial<InstallMetadata>>({})
   const consoleRef = React.useRef<HTMLDivElement>(null)
@@ -1062,15 +1067,14 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
         } catch {
           return { name: profile.name, expiresAt: '' }
         }
-      }),
-    ).then((metadata) => {
-      if (!cancelled) setProfileMetadata(metadata)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [profiles])
-
+            <a
+              className="font-medium text-sky-300 transition-colors hover:text-sky-200 hover:underline"
+              href="https://github.com/zhlynn/zsign"
+              target="_blank"
+              rel="noreferrer"
+            >
+              zsign
+            </a>
   const addLog = React.useCallback((level: LogLevel, message: string) => {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false })
     setLogs((prev) => [...prev, { id: ++logCounter, time, level, message }])
