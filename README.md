@@ -38,6 +38,9 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 21, 2026.
 - Signing-stage progress based on zsign log milestones.
 - IPA, P12/PFX, provisioning profile, optional dylib, password, output name, and bundle
   ID controls.
+- Optional NovaCerts helper that reads the live README table, displays only public
+  enterprise certificate rows currently marked `✅ Signed`, and imports the selected
+  `.p12`, provisioning profile, and password directly from GitHub into the browser.
 - Dylib injection stages selected `.dylib` files in writable browser memory before
   zsign validation, matching upstream zsign's read-write Mach-O mapping behavior.
 - Automatic app name, bundle ID, version, artwork, and IPA-size extraction when an IPA
@@ -86,6 +89,17 @@ and password are saved in this browser's IndexedDB. This data is not uploaded by
 Signer, but it is also not separately encrypted by the app. Do not enable caching on a
 shared or untrusted browser profile. `Forget cached certificate` removes the saved data.
 
+### Optional public certificate import
+
+The public enterprise certificate helper fetches the NovaCerts README in the browser and
+filters the table to entries currently marked `✅ Signed`. Revoked entries are not shown.
+When a listed certificate is imported, Sylva downloads that public `.p12`, provisioning
+profile, and password from GitHub into the same local input controls used for manual files.
+
+These files are third-party public signing assets. They can be revoked by Apple or the
+certificate owner at any time, and use of shared enterprise certificates must comply with
+Apple's terms, the certificate owner's rights, and applicable rules for your situation.
+
 ### Previous IPA history
 
 History is stored in browser `localStorage` and keeps:
@@ -120,7 +134,8 @@ accepts files up to **1 GB**; Sylva rejects larger upload attempts before sendin
 2. Select an `.ipa` file.
 3. Select a `.p12` or `.pfx` signing certificate.
 4. Select one or more `.mobileprovision` files.
-5. Enter the certificate password.
+5. Enter the certificate password. Alternatively, use the public enterprise certificate
+   helper to import a NovaCerts row currently marked signed.
 6. Optionally select dylibs to inject or edit the detected bundle ID.
 7. Optionally enable local certificate caching.
 8. Click `Sign IPA` and keep the tab open while the worker runs. Mobile browsers scroll

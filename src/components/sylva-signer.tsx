@@ -52,6 +52,11 @@ import {
   upsertIpaHistoryEntry,
   type IpaHistoryEntry,
 } from '@/history-api'
+import {
+  fetchNovaCertFiles,
+  fetchSignedNovaCerts,
+  type NovaCertEntry,
+} from '@/public-certs'
 import { saveOutput, signIpa } from '@/zsign-api'
 import type { OutputFile, SignIpaOptions, ZsignProgress } from '@/types'
 import { cn } from '@/lib/utils'
@@ -968,6 +973,10 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   const [certificateMetadata, setCertificateMetadata] = React.useState<CertificateMetadata | null>(null)
   const [certificateMessage, setCertificateMessage] = React.useState('')
   const [profileMetadata, setProfileMetadata] = React.useState<ProvisioningMetadata[]>([])
+  const [publicCerts, setPublicCerts] = React.useState<NovaCertEntry[]>([])
+  const [publicCertsLoading, setPublicCertsLoading] = React.useState(false)
+  const [publicCertImportingId, setPublicCertImportingId] = React.useState('')
+  const [publicCertMessage, setPublicCertMessage] = React.useState('')
 
   const [logs, setLogs] = React.useState<LogEntry[]>([])
   const [state, setState] = React.useState<SignState>('idle')
@@ -991,6 +1000,7 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   const [currentHistoryId, setCurrentHistoryId] = React.useState('')
   const installMetadataRef = React.useRef<Partial<InstallMetadata>>({})
   const consoleRef = React.useRef<HTMLDivElement>(null)
+  const publicCertAbortRef = React.useRef<AbortController | null>(null)
 
   const canSign = Boolean(ipa[0] && (p12[0] || cachedCertInfo?.p12) && (profiles.length || cachedCertInfo?.profiles.length)) && state !== 'signing'
   const hasCache = Boolean(cachedCertInfo?.p12 || cachedCertInfo?.profiles.length || cachedCertInfo?.password)
@@ -998,6 +1008,10 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
 
   React.useEffect(() => {
     setHistoryEntries(readIpaHistory())
+  }, [])
+
+  React.useEffect(() => {
+    return () => publicCertAbortRef.current?.abort()
   }, [])
 
   const hydrateCachedFiles = React.useCallback((cached: CachedCertInfo | null) => {
@@ -1125,6 +1139,68 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false })
     setLogs((prev) => [...prev, { id: ++logCounter, time, level, message }])
   }, [])
+
+  const handleLoadPublicCerts = React.useCallback(async () => {
+    publicCertAbortRef.current?.abort()
+    const controller = new AbortController()
+    publicCertAbortRef.current = controller
+    setPublicCertsLoading(true)
+    setPublicCertMessage('Loading signed public enterprise certificates from NovaCerts...')
+
+    try {
+      const entries = await fetchSignedNovaCerts(controller.signal)
+      setPublicCerts(entries)
+      setPublicCertMessage(
+        entries.length
+          ? `${entries.length} currently signed public enterprise certificate${entries.length === 1 ? '' : 's'} available.`
+          : 'No signed public enterprise certificates are currently listed by NovaCerts.',
+      )
+      addLog(
+        entries.length ? 'info' : 'warn',
+        `NovaCerts signed public certificate list loaded (${entries.length} available)`,
+      )
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      const message = error instanceof Error ? error.message : String(error)
+      setPublicCertMessage(message)
+      addLog('error', message)
+    } finally {
+      if (publicCertAbortRef.current === controller) {
+        publicCertAbortRef.current = null
+      }
+      setPublicCertsLoading(false)
+    }
+  }, [addLog])
+
+  const handleImportPublicCert = React.useCallback(
+    async (entry: NovaCertEntry) => {
+      publicCertAbortRef.current?.abort()
+      const controller = new AbortController()
+      publicCertAbortRef.current = controller
+      setPublicCertImportingId(entry.id)
+      setPublicCertMessage(`Importing ${entry.company} from NovaCerts...`)
+
+      try {
+        const files = await fetchNovaCertFiles(entry, controller.signal)
+        setP12([files.p12])
+        setProfiles([files.profile])
+        setCertPassword(files.password)
+        setPublicCertMessage(`${entry.company} imported. Review the certificate details before signing.`)
+        addLog('success', `Imported signed public enterprise certificate: ${entry.company}`)
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        const message = error instanceof Error ? error.message : String(error)
+        setPublicCertMessage(message)
+        addLog('error', message)
+      } finally {
+        if (publicCertAbortRef.current === controller) {
+          publicCertAbortRef.current = null
+        }
+        setPublicCertImportingId('')
+      }
+    },
+    [addLog],
+  )
 
   const addWorkerLog = React.useCallback(
     (line: string) => {
@@ -1441,6 +1517,90 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
               <h2 className="text-sm font-semibold tracking-tight">
                 Credentials &amp; Options
               </h2>
+            </div>
+
+            <div className="rounded-xl border border-border bg-muted/25 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <AnimateIcon animateOnHover>
+                      <BadgeCheck
+                        size={18}
+                        className="text-muted-foreground transition-colors hover:text-emerald-500"
+                      />
+                    </AnimateIcon>
+                    <p className="text-sm font-medium">Public enterprise certificates</p>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Imports only NovaCerts README entries currently marked signed. Public
+                    enterprise certificates are third-party assets and may be revoked.
+                  </p>
+                </div>
+                <AnimateIcon animate={publicCertsLoading} loop={publicCertsLoading} asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleLoadPublicCerts}
+                    disabled={publicCertsLoading || Boolean(publicCertImportingId)}
+                    className="gap-2 sm:self-start"
+                  >
+                    {publicCertsLoading ? <LoaderCircle size={16} /> : <Download size={16} />}
+                    {publicCerts.length ? 'Refresh signed list' : 'Load signed list'}
+                  </Button>
+                </AnimateIcon>
+              </div>
+
+              {publicCertMessage && (
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">{publicCertMessage}</p>
+              )}
+
+              {publicCerts.length > 0 && (
+                <div className="mt-3 grid gap-2">
+                  {publicCerts.map((entry) => {
+                    const importing = publicCertImportingId === entry.id
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex flex-col gap-3 rounded-lg border border-border bg-background/70 p-3 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="min-w-0 break-words text-sm font-medium">
+                              {entry.company}
+                            </p>
+                            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[0.7rem] font-medium text-emerald-600 dark:text-emerald-300">
+                              Signed
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Valid {entry.validFrom} to {entry.validTo}
+                          </p>
+                          <a
+                            href={entry.sourceTreeUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 inline-flex text-xs text-sky-400 hover:text-sky-300 hover:underline"
+                          >
+                            View source files
+                          </a>
+                        </div>
+                        <AnimateIcon animate={importing} loop={importing} asChild>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => void handleImportPublicCert(entry)}
+                            disabled={Boolean(publicCertImportingId) || publicCertsLoading}
+                            className="gap-2 sm:self-center"
+                          >
+                            {importing ? <LoaderCircle size={16} /> : <Upload size={16} />}
+                            {importing ? 'Importing...' : 'Import'}
+                          </Button>
+                        </AnimateIcon>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">

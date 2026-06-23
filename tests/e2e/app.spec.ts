@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
 import forge from "node-forge";
 import { uploadSignedIpaToLitterbox } from "../../src/install-api";
+import { parseNovaCertsReadme } from "../../src/public-certs";
 import {
   TextReader,
   Uint8ArrayReader,
@@ -94,6 +95,24 @@ function syntheticSigningFiles() {
 </dict></plist>`);
   return { p12Bytes, profile };
 }
+
+const novaCertsFixture = `
+--- | Company | Type | Status | Valid From | Valid To | Download | |:--------|:----|:------|:----------|:--------|:--------| | VIETNAM AIRLINES JSC 2 | Enterprise Certificate | ✅ Signed | Aug 8 12:21:46 2025 GMT | Aug 8 12:21:46 2026 GMT | [Download](https://download-directory.github.io/?url=https%3A//github.com/NovaDev404/certificates/tree/main/VIETNAM%2520AIRLINES%2520JSC%25202) | | China Telecom Corporation Limited | Enterprise Certificate | ❌ Revoked | Apr 23 08:44:02 2026 GMT | Apr 23 08:44:02 2027 GMT | [Download](https://download-directory.github.io/?url=https%3A//github.com/NovaDev404/certificates/tree/main/China%2520Telecom%2520Corporation%2520Limited) |
+`;
+
+test("parses only currently signed NovaCerts enterprise certificates", () => {
+  const entries = parseNovaCertsReadme(novaCertsFixture);
+
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({
+    company: "VIETNAM AIRLINES JSC 2",
+    type: "Enterprise Certificate",
+    status: "Signed",
+    validTo: "Aug 8 12:21:46 2026 GMT",
+    repository: "NovaDev404/certificates",
+    directoryPath: "VIETNAM AIRLINES JSC 2"
+  });
+});
 
 test("uses a preflight-free multipart XHR for Apple mobile uploads", async () => {
   const runtime = globalThis as typeof globalThis & {
@@ -247,6 +266,86 @@ test("shows certificate and provisioning expiration details locally", async ({ p
   await page.locator("#cert-password").fill("temporarily-wrong");
   await expect(page.getByText("Sylva Test Certificate", { exact: true })).toBeVisible();
   await expect(page.getByText("Expires Jun 22, 2030", { exact: true })).toBeVisible();
+});
+
+test("imports only signed public enterprise certificates from NovaCerts", async ({ page }) => {
+  await page.route(
+    "https://raw.githubusercontent.com/NovaDev404/NovaCerts/main/README.md",
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/markdown",
+        body: novaCertsFixture
+      })
+  );
+  await page.route(
+    /https:\/\/api\.github\.com\/repos\/NovaDev404\/(?:certificates|NovaCerts)\/contents\/VIETNAM%20AIRLINES%20JSC%202\?ref=main/,
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            name: "VIETNAM AIRLINES JSC 2.p12",
+            type: "file",
+            download_url:
+              "https://raw.githubusercontent.com/NovaDev404/certificates/main/VIETNAM%20AIRLINES%20JSC%202/VIETNAM%20AIRLINES%20JSC%202.p12"
+          },
+          {
+            name: "VIETNAM AIRLINES JSC 2.mobileprovision",
+            type: "file",
+            download_url:
+              "https://raw.githubusercontent.com/NovaDev404/certificates/main/VIETNAM%20AIRLINES%20JSC%202/VIETNAM%20AIRLINES%20JSC%202.mobileprovision"
+          },
+          {
+            name: "password.txt",
+            type: "file",
+            download_url:
+              "https://raw.githubusercontent.com/NovaDev404/certificates/main/VIETNAM%20AIRLINES%20JSC%202/password.txt"
+          }
+        ])
+      })
+  );
+  await page.route(
+    /https:\/\/raw\.githubusercontent\.com\/NovaDev404\/certificates\/main\/VIETNAM%20AIRLINES%20JSC%202\/VIETNAM%20AIRLINES%20JSC%202\.p12/,
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/x-pkcs12",
+        body: Buffer.from("public-p12")
+      })
+  );
+  await page.route(
+    /https:\/\/raw\.githubusercontent\.com\/NovaDev404\/certificates\/main\/VIETNAM%20AIRLINES%20JSC%202\/VIETNAM%20AIRLINES%20JSC%202\.mobileprovision/,
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/octet-stream",
+        body: Buffer.from("public-profile")
+      })
+  );
+  await page.route(
+    /https:\/\/raw\.githubusercontent\.com\/NovaDev404\/certificates\/main\/VIETNAM%20AIRLINES%20JSC%202\/password\.txt/,
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/plain",
+        body: "nova-password\n"
+      })
+  );
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Load signed list" }).click();
+
+  await expect(page.getByText("VIETNAM AIRLINES JSC 2", { exact: true })).toBeVisible();
+  await expect(page.getByText("China Telecom Corporation Limited")).toHaveCount(0);
+  await expect(page.getByText("Aug 8 12:21:46 2026 GMT")).toBeVisible();
+
+  await page.getByRole("button", { name: "Import" }).click();
+  await expect(page.getByText("VIETNAM AIRLINES JSC 2.p12")).toBeVisible();
+  await expect(page.getByText("VIETNAM AIRLINES JSC 2.mobileprovision")).toBeVisible();
+  await expect(page.locator("#cert-password")).toHaveValue("nova-password");
 });
 
 test("opens privacy and legal pages from the footer", async ({ page }) => {
