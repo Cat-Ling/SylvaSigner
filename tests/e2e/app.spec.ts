@@ -240,7 +240,7 @@ test("extracts app metadata and fills the bundle ID when an IPA is selected", as
   await expect(page.getByText("Dylib injection")).toBeVisible();
   await expect(page.getByText("2 dylibs selected")).toBeVisible();
   await expect(page.getByText("demo1.dylib").nth(1)).toBeVisible();
-  await expect(page.getByText("demo2.dylib", { exact: true })).toBeVisible();
+  await expect(page.getByText("demo2.dylib").first()).toBeVisible();
   await expect(page.getByText("50 KB").first()).toBeVisible();
   await expect(page.getByText("Dynamic library · arm64").first()).toBeVisible();
   await expect(page.getByText("iOS 7.0+").first()).toBeVisible();

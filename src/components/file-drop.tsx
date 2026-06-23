@@ -44,7 +44,21 @@ export function FileDrop({
   const setNextFiles = (nextFiles: FileList | null) => {
     if (!nextFiles?.length) return
     const selected = Array.from(nextFiles)
-    onFiles(multiple ? selected : selected.slice(0, 1))
+    if (multiple) {
+      const existingKeys = new Set(files.map((f) => `${f.name}-${f.size}-${f.lastModified}`))
+      const uniqueNew = selected.filter((f) => !existingKeys.has(`${f.name}-${f.size}-${f.lastModified}`))
+      onFiles([...files, ...uniqueNew])
+    } else {
+      onFiles(selected.slice(0, 1))
+    }
+  }
+
+  const removeFile = (fileToRemove: File) => {
+    const next = files.filter((f) => f !== fileToRemove)
+    onFiles(next)
+    if (inputRef.current) {
+      inputRef.current.value = ''
+    }
   }
 
   return (
@@ -94,11 +108,17 @@ export function FileDrop({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-foreground">
-              {hasFiles ? files.map((file) => file.name).join(', ') : hint}
+              {hasFiles
+                ? multiple
+                  ? `Add more ${label.toLowerCase()}...`
+                  : files.map((file) => file.name).join(', ')
+                : hint}
             </span>
             <span className="block truncate text-xs text-muted-foreground">
               {hasFiles
-                ? files.map((file) => formatSize(file.size)).join(' + ')
+                ? multiple
+                  ? `${files.length} selected (${formatSize(files.reduce((acc, f) => acc + f.size, 0))} total)`
+                  : files.map((file) => formatSize(file.size)).join(' + ')
                 : `${multiple ? 'Accepts multiple' : 'Accepts'} ${accept}`}
             </span>
           </span>
@@ -121,6 +141,35 @@ export function FileDrop({
           </AnimateIcon>
         )}
       </div>
+
+      {multiple && hasFiles && (
+        <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto mt-0.5">
+          {files.map((file, idx) => (
+            <div
+              key={`${file.name}-${file.size}-${idx}`}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs"
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <Icon size={14} className="shrink-0 text-muted-foreground" />
+                <span className="min-w-0 truncate font-medium text-foreground/90" title={file.name}>
+                  {file.name}
+                </span>
+                <span className="shrink-0 text-muted-foreground">
+                  ({formatSize(file.size)})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => removeFile(file)}
+                className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                title="Remove file"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <input
         ref={inputRef}
