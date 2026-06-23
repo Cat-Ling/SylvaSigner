@@ -54,6 +54,7 @@ import {
 } from '@/history-api'
 import { saveOutput, signIpa } from '@/zsign-api'
 import type { OutputFile, SignIpaOptions, ZsignProgress } from '@/types'
+import { cn } from '@/lib/utils'
 
 type SignState = 'idle' | 'signing' | 'done' | 'error'
 type Route = 'app' | 'privacy' | 'legal'
@@ -788,6 +789,7 @@ function formatMetadataSize(bytes: number) {
 
 function AppDetailsTile({
   ipa,
+  dylibs,
   app,
   appLoading,
   appError,
@@ -797,6 +799,7 @@ function AppDetailsTile({
   profiles,
 }: {
   ipa: File
+  dylibs: File[]
   app: AppMetadata | null
   appLoading: boolean
   appError: string
@@ -806,7 +809,7 @@ function AppDetailsTile({
   profiles: ProvisioningMetadata[]
 }) {
   const details = [
-    { icon: Fingerprint, label: 'Bundle ID', value: app?.bundleId || 'Reading metadata...' },
+    { icon: Fingerprint, label: 'Bundle ID', value: app?.bundleId || 'Reading metadata...', wrap: true },
     { icon: Layers, label: 'Version', value: app?.version || 'Unknown' },
     { icon: Download, label: 'IPA size', value: formatMetadataSize(ipa.size) },
   ]
@@ -847,7 +850,7 @@ function AppDetailsTile({
       </div>
 
       <div className="grid gap-px bg-border sm:grid-cols-3">
-        {details.map(({ icon: DetailIcon, label, value }) => (
+        {details.map(({ icon: DetailIcon, label, value, wrap }) => (
           <div key={label} className="min-w-0 bg-card px-4 py-3">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <AnimateIcon animateOnHover>
@@ -855,10 +858,52 @@ function AppDetailsTile({
               </AnimateIcon>
               {label}
             </div>
-            <p className="mt-1 truncate text-sm font-medium" title={value}>{value}</p>
+            <p
+              className={cn(
+                'mt-1 text-sm font-medium',
+                wrap ? 'break-all leading-snug' : 'truncate',
+              )}
+              title={value}
+            >
+              {value}
+            </p>
           </div>
         ))}
       </div>
+
+      {dylibs.length > 0 && (
+        <div className="space-y-3 border-t border-border px-4 py-4">
+          <div className="flex items-start gap-3">
+            <AnimateIcon animateOnHover>
+              <Blocks size={19} className="mt-0.5 text-rose-500" />
+            </AnimateIcon>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-muted-foreground">
+                Dylib injection
+              </p>
+              <p className="mt-0.5 text-sm font-medium">
+                {dylibs.length} {dylibs.length === 1 ? 'dylib selected' : 'dylibs selected'}
+              </p>
+              <div className="mt-2 flex flex-col gap-1.5">
+                {dylibs.map((dylib) => (
+                  <div
+                    key={`${dylib.name}-${dylib.size}-${dylib.lastModified}`}
+                    className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-muted/25 px-2.5 py-2 text-xs"
+                  >
+                    <Blocks size={13} className="shrink-0 text-rose-500" />
+                    <span className="min-w-0 flex-1 break-all font-medium text-foreground/90">
+                      {dylib.name}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {formatMetadataSize(dylib.size)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {(certificateFile || certificateMessage || certificate || profiles.length > 0) && (
         <div className="space-y-3 border-t border-border px-4 py-4">
@@ -1542,6 +1587,7 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
           {ipa[0] && (
             <AppDetailsTile
               ipa={ipa[0]}
+              dylibs={dylibs}
               app={appMetadata}
               appLoading={appMetadataLoading}
               appError={appMetadataError}

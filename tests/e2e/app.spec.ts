@@ -178,6 +178,7 @@ test("loads the exact Sylva signing work surface without external network reques
   await expect(page.getByText("Cache certificate locally")).toBeVisible();
   await expect(page.locator("#bundle-id")).toBeVisible();
   await expect(page.getByText("Console")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy logs" })).toBeVisible();
   await expect(page.getByText("Sylva Signer runs zsign as WebAssembly inside a dedicated browser worker.")).toBeVisible();
   await expect(page.getByText("Install QR")).toHaveCount(0);
   expect(external).toEqual([]);
@@ -208,6 +209,12 @@ test("extracts app metadata and fills the bundle ID when an IPA is selected", as
   await expect(icon).toBeVisible();
   await expect.poll(() => icon.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByText("1.0", { exact: true })).toBeVisible();
+
+  await page.setInputFiles("#dylibs", "vendor/zsign/test/dylib/bin/demo1.dylib");
+  await expect(page.getByText("Dylib injection")).toBeVisible();
+  await expect(page.getByText("1 dylib selected")).toBeVisible();
+  await expect(page.getByText("demo1.dylib").nth(1)).toBeVisible();
+  await expect(page.getByText("50 KB")).toBeVisible();
 });
 
 test("shows certificate and provisioning expiration details locally", async ({ page }) => {

@@ -2,8 +2,10 @@
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { AnimateIcon } from '@/components/animate-ui/icons/icon'
 import { Terminal } from '@/components/animate-ui/icons/terminal'
+import { Copy } from '@/components/animate-ui/icons/copy'
 
 export type LogLevel = 'info' | 'success' | 'warn' | 'error' | 'step'
 
@@ -35,6 +37,16 @@ const levelLabel: Record<LogLevel, string> = {
   step: 'STEP',
 }
 
+function serializeLogs(logs: LogEntry[], activity?: ConsoleActivity | null) {
+  const lines = logs.map((log) => `${log.time}\t${levelLabel[log.level].trim()}\t${log.message}`)
+  if (activity) {
+    lines.push(
+      `--:--:--\tWAIT\t${activity.label}${activity.percent !== undefined ? ` - ${activity.percent}%` : ''}`,
+    )
+  }
+  return lines.join('\n')
+}
+
 export function LogConsole({
   logs,
   active = false,
@@ -45,11 +57,20 @@ export function LogConsole({
   activity?: ConsoleActivity | null
 }) {
   const logsRef = React.useRef<HTMLDivElement>(null)
+  const [copied, setCopied] = React.useState(false)
 
   React.useEffect(() => {
     const logsElement = logsRef.current
     if (!logsElement) return
     logsElement.scrollTop = logsElement.scrollHeight
+  }, [activity, logs])
+
+  const handleCopy = React.useCallback(async () => {
+    const text = serializeLogs(logs, activity)
+    if (!text) return
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1400)
   }, [activity, logs])
 
   return (
@@ -67,6 +88,20 @@ export function LogConsole({
           <span className="ml-auto font-mono text-xs text-muted-foreground">
             {logs.length} {logs.length === 1 ? 'line' : 'lines'}
           </span>
+          <AnimateIcon animateOnHover asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={handleCopy}
+              disabled={logs.length === 0 && !activity}
+              aria-label="Copy logs"
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-sky-400"
+            >
+              <Copy size={14} />
+              {copied ? 'Copied' : 'Copy logs'}
+            </Button>
+          </AnimateIcon>
         </div>
       </AnimateIcon>
 
