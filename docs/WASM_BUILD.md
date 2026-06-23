@@ -41,6 +41,11 @@ passes the extracted folder to upstream zsign with the original output and compr
 arguments intact. zsign's minizip implementation creates the final IPA, preserving its
 file ordering, headers, directory records, attributes, and CLI behavior.
 
+Injected dylibs are staged under `/work/injections` as writable MEMFS/OPFS files, not
+under the read-only WORKERFS blob mount. zsign opens Mach-O inputs through its read-write
+mapping path even when it is only validating a dylib, so browser-selected dylibs must live
+on a writable Emscripten filesystem before `-l` reaches the native core.
+
 Mobile compatibility mode bypasses browser ZIP extraction and the general module worker.
 `public/mobile-zsign-worker.js` is a minimal classic worker which imports only the
 Emscripten runtime. The IPA remains a Blob mounted through WORKERFS while zsign's minizip

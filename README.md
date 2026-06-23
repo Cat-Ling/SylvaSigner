@@ -38,6 +38,8 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 21, 2026.
 - Signing-stage progress based on zsign log milestones.
 - IPA, P12/PFX, provisioning profile, optional dylib, password, output name, and bundle
   ID controls.
+- Dylib injection stages selected `.dylib` files in writable browser memory before
+  zsign validation, matching upstream zsign's read-write Mach-O mapping behavior.
 - Automatic app name, bundle ID, version, artwork, and IPA-size extraction when an IPA
   is selected; the detected bundle ID is loaded into the editable bundle-ID field.
 - Browser decoding for standard and Apple-optimized `CgBI` app icon PNGs, including

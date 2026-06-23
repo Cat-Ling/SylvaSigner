@@ -64,6 +64,13 @@ bool ZMachO::OpenFile(const char* szPath)
 	m_sSize = 0;
 	m_pBase = (uint8_t*)ZFile::MapFile(szPath, 0, 0, &m_sSize, false);
 	if (NULL != m_pBase) {
+		if (m_sSize < sizeof(uint32_t)) {
+			ZLog::ErrorV(">>> Invalid mach-o file: file is too small! %s\n", szPath);
+			ZFile::UnmapFile(m_pBase, m_sSize);
+			m_pBase = NULL;
+			m_sSize = 0;
+			return false;
+		}
 		uint32_t magic = *((uint32_t*)m_pBase);
 		if (FAT_CIGAM == magic || FAT_MAGIC == magic) {
 			fat_header* pFatHeader = (fat_header*)m_pBase;

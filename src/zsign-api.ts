@@ -159,8 +159,8 @@ export function signIpa(
   }
 
   options.dylibs?.forEach((dylib, index) => {
-    const path = `/blob/dylib-${index}.dylib`;
-    files.push({ path, file: dylib, mode: "workerfs" });
+    const path = `/work/injections/dylib-${index}.dylib`;
+    files.push({ path, file: dylib, mode: "memfs" });
     args.push("-l", path);
   });
 

@@ -16,6 +16,8 @@ project-level compliance index.
 Local patches are intentionally small and browser-focused:
 
 - Emscripten-safe file mapping in `src/common/fs.*`
+- Emscripten-safe file copying for injected dylibs crossing browser filesystem backends
+- Mach-O size guard before reading the mapped magic value
 - Browser unsupported stubs for raw-socket OCSP and `system()`
 - Emscripten exclusion for the macOS-only `csreq` diagnostic `popen`
 - `optind` reset before `main()` so repeated WASM invocations are deterministic

@@ -484,7 +484,7 @@ test("streams IPA extraction before native zsign archiving", async ({ page }) =>
   );
 
   expect(result.error).toBeUndefined();
-  expect(result.exitCode).toBe(0);
+  expect(result.exitCode, result.logs.join("\n")).toBe(0);
   expect(result.outputIsBlob).toBe(false);
   expect(result.outputSize).toBeGreaterThan(0);
   expect(result.logs.join("\n")).toContain("Unzip OK!");
@@ -503,6 +503,87 @@ test("streams IPA extraction before native zsign archiving", async ({ page }) =>
   const firstHeader = new DataView(new Uint8Array(result.outputBytes!).buffer);
   expect(firstHeader.getUint32(0, true)).toBe(0x04034b50);
   expect(firstHeader.getUint16(6, true) & 0x808).toBe(0);
+});
+
+test("injects dylibs from writable browser files during fast signing", async ({ page }) => {
+  await page.goto("/");
+  const workerAsset = readdirSync("dist/assets").find((name) => name.startsWith("zsign-worker-"));
+  expect(workerAsset).toBeTruthy();
+  const ipa = await syntheticIpa();
+  const dylib = readFileSync("vendor/zsign/test/dylib/bin/demo2.dylib");
+  const result = await page.evaluate(
+    async ({ workerUrl, ipaBytes, dylibBytes }) => {
+      const worker = new Worker(workerUrl, { type: "module" });
+      const ipaFile = new File([new Uint8Array(ipaBytes)], "Synthetic.ipa", { type: "application/zip" });
+      const dylibFile = new File([new Uint8Array(dylibBytes)], "demo2.dylib", {
+        type: "application/octet-stream"
+      });
+      return new Promise<{
+        exitCode?: number;
+        logs: string[];
+        outputBytes?: number[];
+        error?: string;
+      }>((resolve) => {
+        const logs: string[] = [];
+        worker.onmessage = async (event) => {
+          const message = event.data;
+          if (message.type === "log") logs.push(message.line);
+          if (message.type !== "done") return;
+          worker.terminate();
+          const output = message.result?.outputs?.[0];
+          const outputBytes =
+            output?.data instanceof Blob
+              ? Array.from(new Uint8Array(await output.data.arrayBuffer()))
+              : output?.data instanceof ArrayBuffer
+                ? Array.from(new Uint8Array(output.data))
+                : undefined;
+          resolve({
+            exitCode: message.result?.exitCode,
+            logs,
+            outputBytes,
+            error: message.error
+          });
+        };
+        worker.postMessage({
+          id: 1,
+          type: "run",
+          args: [
+            "-a",
+            "-l",
+            "/work/injections/demo2.dylib",
+            "-z",
+            "1",
+            "-o",
+            "/output/Synthetic_injected.ipa",
+            "/blob/input.ipa"
+          ],
+          files: [
+            { path: "/blob/input.ipa", file: ipaFile, mode: "workerfs" },
+            { path: "/work/injections/demo2.dylib", file: dylibFile, mode: "memfs" }
+          ],
+          options: {
+            outputPaths: ["/output/Synthetic_injected.ipa"],
+            persistCache: false,
+            storageMode: "memory"
+          }
+        });
+      });
+    },
+    {
+      workerUrl: `/assets/${workerAsset}`,
+      ipaBytes: Array.from(ipa),
+      dylibBytes: Array.from(dylib)
+    }
+  );
+
+  expect(result.error).toBeUndefined();
+  expect(result.exitCode, result.logs.join("\n")).toBe(0);
+  expect(result.logs.join("\n")).toContain("InjectDylib");
+
+  const archive = new ZipReader(new Uint8ArrayReader(new Uint8Array(result.outputBytes!)));
+  const entries = await archive.getEntries();
+  await archive.close();
+  expect(entries.some((entry) => entry.filename === "Payload/SylvaTest.app/demo2.dylib")).toBe(true);
 });
 
 test("uses the low-copy native zsign pipeline for mobile compatibility", async ({ page }) => {

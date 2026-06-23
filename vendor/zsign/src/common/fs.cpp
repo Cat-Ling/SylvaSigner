@@ -385,6 +385,12 @@ bool ZFile::CopyFile(const char* szSrcFile, const char* szDestFile)
 {
 #ifdef _WIN32
 	return ::CopyFileA(szSrcFile, szDestFile, FALSE) ? true : false;
+#elif defined(__EMSCRIPTEN__)
+	string strData;
+	if (!ReadFile(szSrcFile, strData)) {
+		return false;
+	}
+	return WriteFile(szDestFile, strData);
 #else 
 
 	int src_id = -1;
