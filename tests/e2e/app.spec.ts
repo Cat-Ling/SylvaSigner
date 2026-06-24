@@ -382,7 +382,7 @@ test("imports only signed public enterprise certificates from NovaCerts", async 
   await expect(page.getByText("China Telecom Corporation Limited")).toHaveCount(0);
   await expect(page.getByText("Aug 8 12:21:46 2026 GMT")).toBeVisible();
 
-  await page.getByRole("button", { name: "Import" }).click();
+  await page.getByRole("button", { name: "Import", exact: true }).click();
   await expect(page.getByText("VIETNAM AIRLINES JSC 2.p12")).toBeVisible();
   await expect(page.getByText("VIETNAM AIRLINES JSC 2.mobileprovision")).toBeVisible();
   await expect(page.locator("#cert-password")).toHaveValue("nova-password");

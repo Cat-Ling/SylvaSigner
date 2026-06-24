@@ -39,8 +39,8 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 21, 2026.
 - Signing-stage progress based on zsign log milestones.
 - IPA, P12/PFX, provisioning profile, optional dylib, password, output name, and bundle
   ID controls.
-- Optional IPA URL import through the Sylva Cloudflare Worker for files up to 100 MB,
-  with direct browser download fallback for larger files.
+- Optional IPA URL import through the Sylva Cloudflare Worker (no size limit for remote imports),
+  with direct browser download fallback if the proxy fails.
 - Optional NovaCerts helper that reads the live README table, displays only public
   enterprise certificate rows currently marked `✅ Signed`, and imports the selected
   `.p12`, provisioning profile, and password directly from GitHub into the browser.
@@ -140,10 +140,10 @@ accepts files up to **1 GB**; Sylva rejects larger upload attempts before sendin
 
 When an IPA URL is entered, Sylva first asks the Sylva Cloudflare Worker at
 `https://sylvacors.antonp29.dev/ipa?url=...` to fetch it. The Worker only permits browser
-requests from `https://sylva.antonp29.dev`, blocks obvious local/private-network targets,
-and enforces a 100 MB limit. If the Worker reports that the file is larger than 100 MB,
-Sylva falls back to the current direct browser download path. The downloaded IPA is then
-handled like a manually selected local file.
+requests from `https://sylva.antonp29.dev` and blocks obvious local/private-network targets.
+The download via the proxy has no size limit (outbound streaming from Cloudflare Workers is not
+restricted to 100 MB). If the proxy download fails for any reason, Sylva falls back to the direct
+browser download path. The downloaded IPA is then handled like a manually selected local file.
 
 ## Browser Workflow
 
