@@ -215,6 +215,31 @@ test("derives output name from selected IPA and keeps live logs visible", async 
   await expect(page.getByText("Waiting for input. Drop your files and press Sign.")).toBeVisible();
 });
 
+test("imports an IPA from a URL and selects it for signing", async ({ page }) => {
+  const ipa = await syntheticIpa();
+  await page.route("**/remote-test.ipa", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/octet-stream",
+      headers: {
+        "content-length": String(ipa.length)
+      },
+      body: Buffer.from(ipa)
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Continue" }).click();
+  const remoteUrl = `${new URL(page.url()).origin}/remote-test.ipa`;
+  await page.getByLabel("IPA URL").fill(remoteUrl);
+  await page.getByRole("button", { name: "Import URL" }).click();
+
+  await expect(page.locator("#output-name")).toHaveValue("remote-test_signed.ipa");
+  await expect(page.getByRole("button", { name: /remote-test\.ipa/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sylva Test" })).toBeVisible();
+  await expect(page.locator("#bundle-id")).toHaveValue("dev.sylva.test");
+});
+
 test("extracts app metadata and fills the bundle ID when an IPA is selected", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Continue" }).click();

@@ -190,6 +190,27 @@ function defaultOutputName(ipa?: File | null) {
   return `${base || 'app'}_signed.ipa`
 }
 
+function fileNameFromUrl(value: string) {
+  try {
+    const url = new URL(value)
+    const pathName = decodeURIComponent(url.pathname.split('/').filter(Boolean).at(-1) ?? '')
+    const cleanName = pathName.replace(/[\\/:*?"<>|]/g, '-').trim()
+    if (/\.(ipa|zip)$/i.test(cleanName)) return cleanName
+    if (cleanName) return `${cleanName}.ipa`
+  } catch {
+    // The caller validates the URL. Fall through to a stable fallback name.
+  }
+  return 'downloaded.ipa'
+}
+
+function readableDownloadError(error: unknown) {
+  if (error instanceof DOMException && error.name === 'AbortError') return 'Download canceled.'
+  if (error instanceof TypeError) {
+    return 'The browser could not download that URL. The host may block cross-origin downloads.'
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
 function cleanLogLine(line: string) {
   return line.replace(/\x1b\[[0-9;]*m/g, '').trim()
 }
@@ -1010,6 +1031,10 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   const [profiles, setProfiles] = React.useState<File[]>([])
   const [dylibs, setDylibs] = React.useState<File[]>([])
 
+  const [ipaUrl, setIpaUrl] = React.useState('')
+  const [ipaUrlDownloading, setIpaUrlDownloading] = React.useState(false)
+  const [ipaUrlProgress, setIpaUrlProgress] = React.useState('')
+  const [ipaUrlError, setIpaUrlError] = React.useState('')
   const [certPassword, setCertPassword] = React.useState('')
   const [outputName, setOutputName] = React.useState('')
   const [bundleId, setBundleId] = React.useState('')
@@ -1053,6 +1078,7 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   const installMetadataRef = React.useRef<Partial<InstallMetadata>>({})
   const consoleRef = React.useRef<HTMLDivElement>(null)
   const publicCertAbortRef = React.useRef<AbortController | null>(null)
+  const ipaUrlAbortRef = React.useRef<AbortController | null>(null)
 
   const canSign = Boolean(ipa[0] && (p12[0] || cachedCertInfo?.p12) && (profiles.length || cachedCertInfo?.profiles.length)) && state !== 'signing'
   const hasCache = Boolean(cachedCertInfo?.p12 || cachedCertInfo?.profiles.length || cachedCertInfo?.password)
@@ -1063,7 +1089,10 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   }, [])
 
   React.useEffect(() => {
-    return () => publicCertAbortRef.current?.abort()
+    return () => {
+      publicCertAbortRef.current?.abort()
+      ipaUrlAbortRef.current?.abort()
+    }
   }, [])
 
   const hydrateCachedFiles = React.useCallback((cached: CachedCertInfo | null) => {
@@ -1302,6 +1331,99 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
     },
     [addLog],
   )
+
+  const handleDownloadIpaUrl = React.useCallback(async () => {
+    const value = ipaUrl.trim()
+    let url: URL
+    try {
+      url = new URL(value)
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        throw new Error('Only HTTP and HTTPS IPA URLs are supported.')
+      }
+    } catch (error) {
+      setIpaUrlError(error instanceof Error ? error.message : 'Enter a valid IPA URL.')
+      return
+    }
+
+    ipaUrlAbortRef.current?.abort()
+    const controller = new AbortController()
+    ipaUrlAbortRef.current = controller
+    const fileName = fileNameFromUrl(url.href)
+
+    setIpaUrlDownloading(true)
+    setIpaUrlError('')
+    setIpaUrlProgress('Starting download...')
+    addLog('info', `Downloading IPA from URL: ${url.href}`)
+
+    try {
+      const response = await fetch(url.href, { signal: controller.signal })
+      if (!response.ok) {
+        throw new Error(`Download failed with HTTP ${response.status}.`)
+      }
+
+      const type = response.headers.get('content-type') || 'application/octet-stream'
+      const total = Number(response.headers.get('content-length') ?? 0)
+      let blob: Blob
+
+      if (response.body) {
+        const reader = response.body.getReader()
+        const chunks: Uint8Array[] = []
+        let received = 0
+        while (true) {
+          const { done, value: chunk } = await reader.read()
+          if (done) break
+          if (!chunk) continue
+          chunks.push(chunk)
+          received += chunk.byteLength
+          setIpaUrlProgress(
+            total > 0
+              ? `Downloaded ${formatMetadataSize(received)} of ${formatMetadataSize(total)}`
+              : `Downloaded ${formatMetadataSize(received)}`,
+          )
+        }
+        blob = new Blob(
+          chunks.map((chunk) => {
+            const copy = new Uint8Array(chunk.byteLength)
+            copy.set(chunk)
+            return copy.buffer
+          }),
+          { type },
+        )
+      } else {
+        blob = await response.blob()
+      }
+
+      if (blob.size === 0) throw new Error('The downloaded file is empty.')
+
+      const file = new File([blob], fileName, {
+        type: type || 'application/octet-stream',
+        lastModified: Date.now(),
+      })
+      setIpa([file])
+      setOutputs([])
+      setState('idle')
+      setConsoleActivity(null)
+      setSignProgress({ value: 0, label: 'Waiting to sign' })
+      setIpaUrlProgress(`Selected ${file.name} (${formatMetadataSize(file.size)})`)
+      addLog('success', `Downloaded and selected IPA: ${file.name}`)
+    } catch (error) {
+      const message = readableDownloadError(error)
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        setIpaUrlError(message)
+        addLog('error', message)
+      }
+      setIpaUrlProgress('')
+    } finally {
+      if (ipaUrlAbortRef.current === controller) {
+        ipaUrlAbortRef.current = null
+      }
+      setIpaUrlDownloading(false)
+    }
+  }, [addLog, ipaUrl])
+
+  const handleCancelIpaUrlDownload = React.useCallback(() => {
+    ipaUrlAbortRef.current?.abort()
+  }, [])
 
   const addWorkerLog = React.useCallback(
     (line: string) => {
@@ -1583,6 +1705,56 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
               files={ipa}
               onFiles={setIpa}
             />
+            <div className="rounded-xl border border-border bg-muted/20 p-3">
+              <Label htmlFor="ipa-url" className="text-xs font-medium text-foreground">
+                IPA URL
+              </Label>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <Input
+                  id="ipa-url"
+                  type="url"
+                  inputMode="url"
+                  value={ipaUrl}
+                  onChange={(event) => {
+                    setIpaUrl(event.target.value)
+                    setIpaUrlError('')
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      if (!ipaUrlDownloading && state !== 'signing') void handleDownloadIpaUrl()
+                    }
+                  }}
+                  placeholder="https://example.com/app.ipa"
+                  disabled={ipaUrlDownloading || state === 'signing'}
+                  aria-invalid={Boolean(ipaUrlError)}
+                />
+                <Button
+                  type="button"
+                  variant={ipaUrlDownloading ? 'outline' : 'secondary'}
+                  onClick={ipaUrlDownloading ? handleCancelIpaUrlDownload : handleDownloadIpaUrl}
+                  disabled={state === 'signing' || (!ipaUrl.trim() && !ipaUrlDownloading)}
+                  className="sm:w-32"
+                >
+                  {ipaUrlDownloading ? (
+                    <LoaderCircle size={16} />
+                  ) : (
+                    <Download size={16} />
+                  )}
+                  {ipaUrlDownloading ? 'Cancel' : 'Import URL'}
+                </Button>
+              </div>
+              {(ipaUrlProgress || ipaUrlError) && (
+                <p
+                  className={cn(
+                    'mt-2 text-xs leading-5',
+                    ipaUrlError ? 'text-destructive' : 'text-muted-foreground',
+                  )}
+                >
+                  {ipaUrlError || ipaUrlProgress}
+                </p>
+              )}
+            </div>
             <FileDrop
               id="p12"
               label="Signing certificate (.p12)"
