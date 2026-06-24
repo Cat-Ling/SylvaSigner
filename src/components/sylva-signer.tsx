@@ -624,7 +624,7 @@ function LegalFooter() {
           </a>
           <a
             className="transition-colors hover:text-emerald-500"
-            href="https://github.com/AntonP29/Sylva26/blob/master/LICENSE"
+            href="https://github.com/AntonP29/SylvaSigner/blob/master/LICENSE"
             target="_blank"
             rel="noreferrer"
           >
