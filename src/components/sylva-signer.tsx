@@ -55,9 +55,9 @@ import {
   type IpaHistoryEntry,
 } from '@/history-api'
 import {
-  fetchNovaCertFiles,
-  fetchSignedNovaCerts,
-  type NovaCertEntry,
+  fetchNexCertFiles,
+  fetchSignedNexCerts,
+  type NexCertEntry,
 } from '@/public-certs'
 import { saveOutput, signIpa } from '@/zsign-api'
 import { sylvaProxyBaseUrl } from '@/install-api'
@@ -557,6 +557,20 @@ function WelcomeMark() {
   )
 }
 
+function getFormattedDate() {
+  const date = new Date()
+  const day = date.getDate()
+  const month = date.toLocaleDateString('en-US', { month: 'long' })
+  const year = date.getFullYear()
+
+  let suffix = 'th'
+  if (day % 10 === 1 && day !== 11) suffix = 'st'
+  else if (day % 10 === 2 && day !== 12) suffix = 'nd'
+  else if (day % 10 === 3 && day !== 13) suffix = 'rd'
+
+  return `${month} ${day}${suffix}, ${year}`
+}
+
 function WelcomeDialog({ onClose }: { onClose: () => void }) {
   return (
     <div
@@ -595,7 +609,7 @@ function WelcomeDialog({ onClose }: { onClose: () => void }) {
               <GithubIcon size={14} />
               AntonP29
             </a>
-            <span>June 21st, 2026</span>
+            <span>{getFormattedDate()}</span>
           </div>
 
           <Button type="button" onClick={onClose} className="w-full">
@@ -1060,7 +1074,7 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   const [dylibMetadata, setDylibMetadata] = React.useState<Record<string, DylibMetadata>>({})
   const [dylibMetadataLoading, setDylibMetadataLoading] = React.useState(false)
   const [dylibMetadataErrors, setDylibMetadataErrors] = React.useState<Record<string, string>>({})
-  const [publicCerts, setPublicCerts] = React.useState<NovaCertEntry[]>([])
+  const [publicCerts, setPublicCerts] = React.useState<NexCertEntry[]>([])
   const [publicCertsLoading, setPublicCertsLoading] = React.useState(false)
   const [publicCertImportingId, setPublicCertImportingId] = React.useState('')
   const [publicCertMessage, setPublicCertMessage] = React.useState('')
@@ -1285,19 +1299,19 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
     const controller = new AbortController()
     publicCertAbortRef.current = controller
     setPublicCertsLoading(true)
-    setPublicCertMessage('Loading signed public enterprise certificates from NovaCerts...')
+    setPublicCertMessage('Loading signed public enterprise certificates from NexCerts...')
 
     try {
-      const entries = await fetchSignedNovaCerts(controller.signal)
+      const entries = await fetchSignedNexCerts(controller.signal)
       setPublicCerts(entries)
       setPublicCertMessage(
         entries.length
           ? `${entries.length} currently signed public enterprise certificate${entries.length === 1 ? '' : 's'} available.`
-          : 'No signed public enterprise certificates are currently listed by NovaCerts.',
+          : 'No signed public enterprise certificates are currently listed by NexCerts.',
       )
       addLog(
         entries.length ? 'info' : 'warn',
-        `NovaCerts signed public certificate list loaded (${entries.length} available)`,
+        `NexCerts signed public certificate list loaded (${entries.length} available)`,
       )
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
@@ -1313,15 +1327,15 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
   }, [addLog])
 
   const handleImportPublicCert = React.useCallback(
-    async (entry: NovaCertEntry) => {
+    async (entry: NexCertEntry) => {
       publicCertAbortRef.current?.abort()
       const controller = new AbortController()
       publicCertAbortRef.current = controller
       setPublicCertImportingId(entry.id)
-      setPublicCertMessage(`Importing ${entry.company} from NovaCerts...`)
+      setPublicCertMessage(`Importing ${entry.company} from NexCerts...`)
 
       try {
-        const files = await fetchNovaCertFiles(entry, controller.signal)
+        const files = await fetchNexCertFiles(entry, controller.signal)
         setP12([files.p12])
         setProfiles([files.profile])
         setCertPassword(files.password)
@@ -1835,7 +1849,7 @@ function SignerApp({ mobileMode = false }: { mobileMode?: boolean }) {
                     <p className="text-sm font-medium">Public enterprise certificates</p>
                   </div>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Imports only NovaCerts README entries currently marked signed. Public
+                    Imports only NexCerts README entries currently marked signed. Public
                     enterprise certificates are third-party assets and may be revoked.
                   </p>
                 </div>

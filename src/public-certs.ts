@@ -1,4 +1,4 @@
-export type NovaCertEntry = {
+export type NexCertEntry = {
   id: string
   company: string
   type: string
@@ -11,7 +11,7 @@ export type NovaCertEntry = {
   directoryPath: string
 }
 
-export type NovaCertFiles = {
+export type NexCertFiles = {
   p12: File
   profile: File
   password: string
@@ -23,8 +23,8 @@ type GithubContentItem = {
   download_url: string | null
 }
 
-const novaCertsReadmeUrl = 'https://raw.githubusercontent.com/NovaDev404/NovaCerts/main/README.md'
-const githubContentsRepos = ['NovaDev404/certificates', 'NovaDev404/NovaCerts']
+const nexCertsReadmeUrl = 'https://raw.githubusercontent.com/NovaDev404/NexCerts/main/README.md'
+const githubContentsRepos = ['NovaDev404/certificates', 'NovaDev404/NexCerts']
 
 function decodeRepeated(value: string) {
   let current = value
@@ -88,8 +88,8 @@ function parseDownloadLink(markdown: string) {
   return { downloadUrl, sourceTreeUrl, repository, directoryPath }
 }
 
-export function parseNovaCertsReadme(markdown: string): NovaCertEntry[] {
-  const entries: NovaCertEntry[] = []
+export function parseNexCertsReadme(markdown: string): NexCertEntry[] {
+  const entries: NexCertEntry[] = []
   const rowPattern =
     /\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*(\[Download\]\([^)]+\))\s*\|/gi
 
@@ -120,10 +120,10 @@ export function parseNovaCertsReadme(markdown: string): NovaCertEntry[] {
   return entries
 }
 
-export async function fetchSignedNovaCerts(signal?: AbortSignal) {
-  const response = await fetch(novaCertsReadmeUrl, { signal })
-  if (!response.ok) throw new Error(`Could not load NovaCerts README (${response.status}).`)
-  return parseNovaCertsReadme(await response.text())
+export async function fetchSignedNexCerts(signal?: AbortSignal) {
+  const response = await fetch(nexCertsReadmeUrl, { signal })
+  if (!response.ok) throw new Error(`Could not load NexCerts README (${response.status}).`)
+  return parseNexCertsReadme(await response.text())
 }
 
 async function fetchContents(repository: string, directoryPath: string, signal?: AbortSignal) {
@@ -144,7 +144,7 @@ async function fetchContents(repository: string, directoryPath: string, signal?:
     }
   }
 
-  throw new Error('Could not load the selected NovaCerts certificate directory.')
+  throw new Error('Could not load the selected NexCerts certificate directory.')
 }
 
 async function downloadFile(url: string, name: string, type: string, signal?: AbortSignal) {
@@ -153,7 +153,7 @@ async function downloadFile(url: string, name: string, type: string, signal?: Ab
   return new File([await response.blob()], name, { type, lastModified: Date.now() })
 }
 
-export async function fetchNovaCertFiles(entry: NovaCertEntry, signal?: AbortSignal): Promise<NovaCertFiles> {
+export async function fetchNexCertFiles(entry: NexCertEntry, signal?: AbortSignal): Promise<NexCertFiles> {
   const contents = await fetchContents(entry.repository, entry.directoryPath, signal)
   const files = contents.filter((item) => item.type === 'file' && item.download_url)
   const p12Item = files.find((item) => /\.p12$/i.test(item.name))
@@ -161,7 +161,7 @@ export async function fetchNovaCertFiles(entry: NovaCertEntry, signal?: AbortSig
   const passwordItem = files.find((item) => /^password\.txt$/i.test(item.name))
 
   if (!p12Item?.download_url || !profileItem?.download_url || !passwordItem?.download_url) {
-    throw new Error('The selected NovaCerts directory is missing a P12, profile, or password.txt file.')
+    throw new Error('The selected NexCerts directory is missing a P12, profile, or password.txt file.')
   }
 
   const [p12, profile, passwordResponse] = await Promise.all([

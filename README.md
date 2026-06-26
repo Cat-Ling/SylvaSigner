@@ -19,7 +19,7 @@ through Palera. Small uploads are relayed through the Sylva Cloudflare Worker fo
 progress; larger uploads keep the direct browser-to-Litterbox path. This action is
 separate from local signing and requires explicit user confirmation.
 
-Made by [AntonP29](https://github.com/AntonP29). Project status: June 21, 2026.
+Made by [AntonP29](https://github.com/AntonP29). Project status: [![Current Date](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ftimeapi.io%2Fapi%2Fv1%2Ftime%2Fcurrent%2Fzone%3FtimeZone%3DUTC&query=%24.date&label=&color=blue)](https://timeapi.io).
 
 ## Features
 
@@ -41,7 +41,7 @@ Made by [AntonP29](https://github.com/AntonP29). Project status: June 21, 2026.
   ID controls.
 - Optional IPA URL import through the Sylva Cloudflare Worker (no size limit for remote imports),
   with direct browser download fallback if the proxy fails.
-- Optional NovaCerts helper that reads the live README table, displays only public
+- Optional NexCerts helper that reads the live README table, displays only public
   enterprise certificate rows currently marked `✅ Signed`, and imports the selected
   `.p12`, provisioning profile, and password directly from GitHub into the browser.
 - Dylib injection stages selected `.dylib` files in writable browser memory before
@@ -97,7 +97,7 @@ shared or untrusted browser profile. `Forget cached certificate` removes the sav
 
 ### Optional public certificate import
 
-The public enterprise certificate helper fetches the NovaCerts README in the browser and
+The public enterprise certificate helper fetches the NexCerts README in the browser and
 filters the table to entries currently marked `✅ Signed`. Revoked entries are not shown.
 When a listed certificate is imported, Sylva downloads that public `.p12`, provisioning
 profile, and password from GitHub into the same local input controls used for manual files.
@@ -152,7 +152,7 @@ browser download path. The downloaded IPA is then handled like a manually select
 3. Select a `.p12` or `.pfx` signing certificate.
 4. Select one or more `.mobileprovision` files.
 5. Enter the certificate password. Alternatively, use the public enterprise certificate
-   helper to import a NovaCerts row currently marked signed.
+   helper to import a NexCerts row currently marked signed.
 6. Optionally select dylibs to inject or edit the detected bundle ID.
 7. Optionally enable local certificate caching.
 8. Click `Sign IPA` and keep the tab open while the worker runs. Mobile browsers scroll
@@ -445,7 +445,7 @@ uses zsign (MIT), zlib/minizip (zlib terms), OpenSSL 3.5.7 (Apache-2.0), and Ems
 - Powered by [`zsign`](https://github.com/zhlynn/zsign), with a privacy-focused WebAssembly
   port for this browser proof of concept.
 - Optional public enterprise certificate listings are read at runtime from
-  [NovaCerts](https://github.com/NovaDev404/NovaCerts). Certificate files are not
+  [NexCerts](https://github.com/NovaDev404/NexCerts). Certificate files are not
   vendored in this repository.
 - Optional temporary IPA hosting is provided by
   [Litterbox](https://litterbox.catbox.moe/).

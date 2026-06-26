@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
 import forge from "node-forge";
 import { uploadSignedIpaToLitterbox } from "../../src/install-api";
-import { parseNovaCertsReadme } from "../../src/public-certs";
+import { parseNexCertsReadme } from "../../src/public-certs";
 import {
   TextReader,
   Uint8ArrayReader,
@@ -96,12 +96,12 @@ function syntheticSigningFiles() {
   return { p12Bytes, profile };
 }
 
-const novaCertsFixture = `
+const nexCertsFixture = `
 --- | Company | Type | Status | Valid From | Valid To | Download | |:--------|:----|:------|:----------|:--------|:--------| | VIETNAM AIRLINES JSC 2 | Enterprise Certificate | ✅ Signed | Aug 8 12:21:46 2025 GMT | Aug 8 12:21:46 2026 GMT | [Download](https://download-directory.github.io/?url=https%3A//github.com/NovaDev404/certificates/tree/main/VIETNAM%2520AIRLINES%2520JSC%25202) | | China Telecom Corporation Limited | Enterprise Certificate | ❌ Revoked | Apr 23 08:44:02 2026 GMT | Apr 23 08:44:02 2027 GMT | [Download](https://download-directory.github.io/?url=https%3A//github.com/NovaDev404/certificates/tree/main/China%2520Telecom%2520Corporation%2520Limited) |
 `;
 
-test("parses only currently signed NovaCerts enterprise certificates", () => {
-  const entries = parseNovaCertsReadme(novaCertsFixture);
+test("parses only currently signed NexCerts enterprise certificates", () => {
+  const entries = parseNexCertsReadme(nexCertsFixture);
 
   expect(entries).toHaveLength(1);
   expect(entries[0]).toMatchObject({
@@ -184,7 +184,7 @@ test("loads the exact Sylva signing work surface without external network reques
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Hey there 👋" })).toBeVisible();
-  await expect(page.getByText("June 21st, 2026")).toBeVisible();
+  await expect(page.getByText(/^\w+ \d{1,2}(?:st|nd|rd|th), \d{4}$/)).toBeVisible();
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: "Sylva Signer" })).toBeVisible();
   await expect(page.getByText("Fully local IPA signing in your browser")).toBeVisible();
@@ -308,18 +308,18 @@ test("shows certificate and provisioning expiration details locally", async ({ p
   await expect(page.getByText("Expires Jun 22, 2030", { exact: true })).toBeVisible();
 });
 
-test("imports only signed public enterprise certificates from NovaCerts", async ({ page }) => {
+test("imports only signed public enterprise certificates from NexCerts", async ({ page }) => {
   await page.route(
-    "https://raw.githubusercontent.com/NovaDev404/NovaCerts/main/README.md",
+    "https://raw.githubusercontent.com/NovaDev404/NexCerts/main/README.md",
     (route) =>
       route.fulfill({
         status: 200,
         contentType: "text/markdown",
-        body: novaCertsFixture
+        body: nexCertsFixture
       })
   );
   await page.route(
-    /https:\/\/api\.github\.com\/repos\/NovaDev404\/(?:certificates|NovaCerts)\/contents\/VIETNAM%20AIRLINES%20JSC%202\?ref=main/,
+    /https:\/\/api\.github\.com\/repos\/NovaDev404\/(?:certificates|NexCerts)\/contents\/VIETNAM%20AIRLINES%20JSC%202\?ref=main/,
     (route) =>
       route.fulfill({
         status: 200,
